@@ -21,6 +21,7 @@ export class Bot {
     this.err = { x: 0, z: 0 };
     this.track = new Map(); // 상대 id -> { x, z, vx, vz }
     this.judged = new Map(); // 공 id -> 피할지 말지 (공 하나당 한 번만 정한다)
+    this.seenItems = new Set(); // 주우러 갈지 이미 정한 아이템
     this.reset();
   }
 
@@ -29,6 +30,8 @@ export class Bot {
     this.timer = rand(0.3, 0.8);
     this.thinkT = 0;
     this.packTarget = RULES.maxAmmo;
+    this.itemId = 0;
+    this.lastStones = this.me.stones || 0;
     const I = this.I;
     I.mx = I.mz = 0;
     I.pack = I.charge = I.dash = false;
@@ -100,10 +103,40 @@ export class Bot {
       }
     }
 
+    // 내 진영에 떨어진 얼음돌 주우러 가기
+    if (!me.stones && this.mode !== 'evade' && this.mode !== 'recover' && this.mode !== 'item' && !me.charging) {
+      for (const it of g.items) {
+        if (this.seenItems.has(it.id) || Math.sign(it.z) !== me.side || it.fallT > 0.6) continue;
+        this.seenItems.add(it.id);
+        if (Math.hypot(it.x - me.x, it.z - me.z) < 14 && Math.random() < L.aggro + 0.2) {
+          this.mode = 'item'; this.itemId = it.id; this.timer = 4;
+          this.goal.x = it.x; this.goal.z = it.z;
+          I.pack = false;
+          break;
+        }
+      }
+    }
+    // 얼음돌을 한 발 쐈으면 다시 판단
+    if (me.stones < this.lastStones && this.mode === 'attack') { this.mode = 'decide'; this.timer = rand(0.2, 0.5) + L.hold; I.charge = false; }
+    this.lastStones = me.stones;
+
     switch (this.mode) {
+      case 'item':
+        this.moveTo(0.1);
+        if (!g.items.some(it => it.id === this.itemId) || this.timer <= 0) { this.mode = 'decide'; this.timer = 0; }
+        break;
       case 'decide':
         I.charge = false; I.pack = false;
         if (this.timer > 0) { this.stop(); break; }
+        if (foe && me.stones > 0) {
+          this.mode = 'attack';
+          this.goal.x = me.x + rand(-3, 3);
+          this.goal.z = me.z;
+          this.timer = rand(0.2, 0.7);
+          this.err.x = rand(-1, 1) * L.aimErr * 0.5;
+          this.err.z = rand(-1, 1) * L.aimErr * 0.5;
+          break;
+        }
         if (!foe || me.ammo === 0 || (me.ammo < RULES.maxAmmo && Math.random() > L.aggro)) {
           this.mode = 'cover';
           this.coverSpot();
@@ -137,8 +170,8 @@ export class Bot {
         if (!foe) { this.mode = 'decide'; this.timer = 0; I.charge = false; break; }
         if (!me.charging) {
           // 누르는 순간을 만들기 위해 한 번씩 끊어서 누른다
-          I.charge = this.timer <= 0 && me.ammo > 0 && !I.charge;
-          if (me.ammo === 0) { this.mode = 'decide'; this.timer = 0; }
+          I.charge = this.timer <= 0 && (me.ammo > 0 || me.stones > 0) && !I.charge;
+          if (me.ammo === 0 && !me.stones) { this.mode = 'decide'; this.timer = 0; }
         } else if (Math.min(me.chargeT / g.cfg.chargeTime, 1) >= this.neededCharge() - 0.02) {
           I.charge = false;
           this.mode = 'decide';
@@ -162,8 +195,12 @@ export class Bot {
     const me = this.me, I = this.I, L = LEVELS[this.level];
     if (!foe) { I.ax = me.x; I.az = me.z - me.side * 5; return; }
     const d = Math.hypot(foe.x - me.x, foe.z - me.z);
-    const P = launch(this.g.cfg, this.chargeFor(d));
-    const t = P.t * Math.min(1, d / P.range);
+    let t;
+    if (me.stones > 0 && !me.charging) t = d / RULES.stoneSpeed;
+    else {
+      const P = launch(this.g.cfg, this.chargeFor(d));
+      t = P.t * Math.min(1, d / P.range);
+    }
     const tr = this.track.get(foe.id) || { vx: 0, vz: 0 };
     I.ax = foe.x + tr.vx * t * L.lead + this.err.x;
     I.az = foe.z + tr.vz * t * L.lead + this.err.z;

@@ -70,6 +70,13 @@ body.team1 #ammoBox .hp i { background: var(--blue); }
 .slots i.on { border: 0; background: radial-gradient(circle at 35% 30%, #fff 0 35%, #dfe9f6 70%, #b8cbe6); box-shadow: 0 2px 4px rgba(40, 70, 120, .3); }
 .bar { height: 8px; border-radius: 4px; background: #e1e8f2; overflow: hidden; }
 .bar span { display: block; height: 100%; width: 0; background: var(--shade); }
+#stoneRow { display: none; grid-template-columns: auto auto 1fr; align-items: center; gap: 6px; margin-top: 10px; padding: 6px 8px; border-radius: 10px; background: #e3f4ff; color: #1b6fa8; font-weight: 700; }
+#stoneRow.show { display: grid; animation: glow 1.2s ease-in-out infinite alternate; }
+#stoneRow b { font: 18px Jua, sans-serif; font-weight: 400; justify-self: end; }
+#stoneRow small { grid-column: 1 / -1; font-size: 12px; font-weight: 500; color: #3a86b8; }
+.gem { width: 14px; height: 18px; background: linear-gradient(160deg, #c8ecff, #3aa6e8); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+@keyframes glow { to { box-shadow: 0 0 0 3px rgba(58, 166, 232, .35); } }
+@media (prefers-reduced-motion: reduce) { #stoneRow.show { animation: none; } }
 #dashRow { margin-top: 10px; }
 #dashRow small { display: block; font-size: 13px; color: var(--sub); margin-bottom: 3px; }
 #dashRow .bar span { background: #b3c2d8; }

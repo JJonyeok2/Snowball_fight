@@ -26,6 +26,16 @@ export const RULES = {
   countdown: 2.7,
   roundEndTime: 3.2,
   tickRate: 30,
+  // 아이템: 얼음돌
+  stoneSpeed: 28,     // 직선으로 날아가는 속도(m/s)
+  stoneRange: 22,     // 사거리(m)
+  stoneHeight: 0.95,  // 날아가는 높이(m), 눈벽(1.1m)에 막힌다
+  stonesPerPick: 2,   // 한 번 주우면 몇 발
+  itemFirst: 6,       // 라운드 시작 후 첫 아이템까지(초)
+  itemEvery: 10,      // 그다음부터 간격(초)
+  itemFall: 1.2,      // 떨어지는 시간(초), 이동안 바닥에 표시
+  itemLife: 15,       // 안 주우면 사라지기까지(초)
+  itemMax: 2,         // 동시에 깔려 있을 수 있는 수
 };
 
 // 눈벽과 출발 위치는 빨강팀(아래쪽, z > 0) 기준. 파랑팀은 z를 뒤집어 대칭으로 둔다.

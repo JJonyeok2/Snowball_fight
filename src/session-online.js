@@ -129,10 +129,18 @@ export class OnlineSession {
     for (const b of this.ballRecs.values()) {
       const age = rt - b.t;
       if (age < 0) continue;
-      balls.push({ id: b.bid, x: b.x0 + b.vx * age, y: b.y0 + b.vy * age - 0.5 * G * age * age, z: b.z0 + b.vz * age });
+      const stone = b.kind === 'stone';
+      balls.push({
+        id: b.bid, kind: b.kind, vx: b.vx, vz: b.vz,
+        x: b.x0 + b.vx * age, z: b.z0 + b.vz * age,
+        y: stone ? b.y0 : b.y0 + b.vy * age - 0.5 * G * age * age,
+      });
     }
 
+    const items = (s0.it || []).map(([id, x, z, f]) => ({ id, x, z, fallT: Math.max(0, f - (rt - s0.tm)) }));
+
     return {
+      items,
       time: rt, state: s1.st, stateT: s1.sT + Math.max(0, rt - s1.tm), round: s1.rd, score: s1.sc, kills: s1.k,
       winner: s1.wn, walls: s1.w, players, balls, cfg: DEFAULTS, me: this.meView,
     };

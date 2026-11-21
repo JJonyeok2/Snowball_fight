@@ -52,6 +52,7 @@ export class Hud {
     this.set('round', rs.round, v => { $('roundNo').textContent = `${v}라운드`; });
     if (!me) return;
     this.set('ammo', me.ammo, v => this.slots.forEach((s, i) => s.classList.toggle('on', i < v)));
+    this.set('stones', me.stones || 0, v => { $('stoneRow').classList.toggle('show', v > 0); $('stoneN').textContent = `×${v}`; });
     this.set('myHp', me.hp, v => this.myHp.forEach((s, i) => s.classList.toggle('off', i >= v)));
     $('packBar').style.width = `${me.pack * 100}%`;
     $('dashBar').style.width = `${(1 - me.dashCd / cfg.dashCooldown) * 100}%`;

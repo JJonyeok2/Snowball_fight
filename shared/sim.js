@@ -45,7 +45,7 @@ export function newPlayer(id, team, slot, name, isBot = false) {
     id, team, slot, name, isBot, side: team === 0 ? 1 : -1,
     x: 0, z: 0, dx: 0, dz: -1, hp: 0, ammo: 0, pack: 0, packSnd: 0, packing: false,
     charging: false, chargeT: 0, prevCharge: false, dashT: 0, dashCd: 0, ddx: 0, ddz: 0,
-    throwT: 0, hitT: 0, kx: 0, kz: 0, speed: 0, mvx: 0, mvz: 0, down: false, respawnT: 0, invulnT: 0,
+    throwT: 0, hitT: 0, kx: 0, kz: 0, speed: 0, mvx: 0, mvz: 0, down: false, respawnT: 0, invulnT: 0, stones: 0,
   };
 }
 
@@ -54,13 +54,13 @@ export function resetPlayer(p, mode) {
   Object.assign(p, {
     x: s.x, z: s.z, dx: 0, dz: -p.side, hp: RULES.hp, ammo: RULES.startAmmo, pack: 0, packSnd: 0,
     packing: false, charging: false, chargeT: 0, prevCharge: false, dashT: 0, dashCd: 0,
-    throwT: 0, hitT: 0, kx: 0, kz: 0, speed: 0, down: false, respawnT: 0, invulnT: 0,
+    throwT: 0, hitT: 0, kx: 0, kz: 0, speed: 0, down: false, respawnT: 0, invulnT: 0, stones: 0,
   });
 }
 
 // 스냅샷과 예측 보정에 쓰는 직렬화 필드
 const P_NUM = ['x', 'z', 'dx', 'dz', 'hp', 'ammo', 'pack', 'packSnd', 'chargeT', 'dashT', 'dashCd', 'ddx', 'ddz',
-  'throwT', 'hitT', 'kx', 'kz', 'speed', 'mvx', 'mvz', 'respawnT', 'invulnT'];
+  'throwT', 'hitT', 'kx', 'kz', 'speed', 'mvx', 'mvz', 'respawnT', 'invulnT', 'stones'];
 const P_BOOL = ['packing', 'charging', 'prevCharge', 'down'];
 
 export function packPlayer(p) {
@@ -83,7 +83,7 @@ export function unpackPlayer(a, p) {
 /*
   플레이어 한 명을 입력 하나만큼 진행한다. 서버, 연습 모드, 내 캐릭터 예측이 모두 이 함수를 쓴다.
   I: { mx, mz, ax, az, pack, charge, dash } (없으면 null)
-  ctx: { cfg, mode, walls, active, emit(type, p, extra), spawnBall(p, c) }
+  ctx: { cfg, mode, walls, active, emit(type, p, extra), spawnBall(p, c), spawnStone(p) }
 */
 export function stepPlayer(p, I, dt, ctx) {
   const cfg = ctx.cfg, M = MODES[ctx.mode];
@@ -128,7 +128,9 @@ export function stepPlayer(p, I, dt, ctx) {
       ctx.spawnBall(p, c);
     }
   } else if (pressed) {
-    if (p.ammo > 0) { p.charging = true; p.chargeT = 0; }
+    // 얼음돌을 들고 있으면 누르는 순간 바로 직선으로 날린다
+    if (p.stones > 0) { p.stones--; p.throwT = 0.25; ctx.spawnStone(p); }
+    else if (p.ammo > 0) { p.charging = true; p.chargeT = 0; }
     else ctx.emit('empty', p);
   }
 
@@ -187,10 +189,15 @@ export class Game {
     this.winner = -1;
     this.events = [];
     this.ballId = 0;
+    this.items = [];
+    this.itemId = 0;
+    this.itemT = RULES.itemFirst;
+    this.itemSide = Math.random() < 0.5 ? 1 : -1;
     this.ctx = {
       cfg: this.cfg, mode, walls: this.walls, active: false,
       emit: (type, p, extra) => this.emit(type, { id: p.id, x: r3(p.x), z: r3(p.z), ...extra }),
       spawnBall: (p, c) => this.spawnBall(p, c),
+      spawnStone: p => this.spawnStone(p),
     };
   }
 
@@ -217,6 +224,8 @@ export class Game {
     this.kills = [0, 0];
     for (const w of this.walls) w.hp = RULES.wallHp;
     this.balls = [];
+    this.items = [];
+    this.itemT = RULES.itemFirst;
     for (const p of this.players) resetPlayer(p, this.mode);
     this.state = 'countdown';
     this.stateT = 0;
@@ -235,6 +244,7 @@ export class Game {
       }
     }
     this.stepBalls(dt);
+    if (this.state === 'play') this.stepItems(dt);
     this.time += dt;
     this.stateT += dt;
     if (this.state === 'countdown' && this.stateT >= RULES.countdown) {
@@ -265,6 +275,59 @@ export class Game {
     this.emit('ball', { bid: b.id, owner: p.id, team: p.team, x0: r3(b.x0), y0: b.y0, z0: r3(b.z0), vx: r3(b.vx), vy: r3(b.vy), vz: r3(b.vz), c: r3(c) });
   }
 
+  // 얼음돌: 중력 없이 일정한 높이로 곧게 날아가다 사거리 끝에서 떨어진다
+  spawnStone(p) {
+    const v = RULES.stoneSpeed;
+    const b = {
+      id: ++this.ballId, owner: p.id, team: p.team, kind: 'stone',
+      x0: p.x + p.dx * SPAWN_OFFSET, y0: RULES.stoneHeight, z0: p.z + p.dz * SPAWN_OFFSET,
+      vx: p.dx * v, vy: 0, vz: p.dz * v, age: 0, maxAge: RULES.stoneRange / v,
+    };
+    b.x = b.x0; b.y = b.y0; b.z = b.z0;
+    this.balls.push(b);
+    this.emit('ball', { bid: b.id, owner: p.id, team: p.team, kind: 'stone', x0: r3(b.x0), y0: b.y0, z0: r3(b.z0), vx: r3(b.vx), vy: 0, vz: r3(b.vz), c: 1 });
+  }
+
+  stepItems(dt) {
+    this.itemT -= dt;
+    if (this.itemT <= 0) {
+      if (this.items.length < RULES.itemMax) { this.dropItem(); this.itemT = RULES.itemEvery; }
+      else this.itemT = 2;
+    }
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const it = this.items[i];
+      if (it.fallT > 0) {
+        it.fallT -= dt;
+        if (it.fallT <= 0) this.emit('itemLand', { iid: it.id, x: it.x, z: it.z });
+        continue;
+      }
+      it.life -= dt;
+      if (it.life <= 0) { this.items.splice(i, 1); this.emit('itemGone', { iid: it.id, x: it.x, z: it.z }); continue; }
+      const p = this.players.find(q => !q.down && Math.hypot(q.x - it.x, q.z - it.z) < 0.9);
+      if (p) {
+        p.stones = RULES.stonesPerPick;
+        this.items.splice(i, 1);
+        this.emit('itemPick', { iid: it.id, id: p.id, x: it.x, z: it.z });
+      }
+    }
+  }
+
+  // 중앙선을 못 넘으니 양 진영에 번갈아 떨어뜨린다
+  dropItem() {
+    const side = this.itemSide;
+    this.itemSide = -side;
+    const hx = this.M.w / 2 - 2, hz = this.M.d / 2 - 1.5;
+    let x = 0, z = side * 5;
+    for (let tries = 0; tries < 30; tries++) {
+      x = (Math.random() * 2 - 1) * hx;
+      z = side * (1.5 + Math.random() * (hz - 1.5));
+      if (!this.walls.some(w => Math.abs(x - w.x) < 2.3 && Math.abs(z - w.z) < 1.4)) break;
+    }
+    const it = { id: ++this.itemId, x: r3(x), z: r3(z), fallT: RULES.itemFall, life: RULES.itemLife };
+    this.items.push(it);
+    this.emit('itemDrop', { iid: it.id, x: it.x, z: it.z });
+  }
+
   // 궤적은 해석적으로 계산해서 클라이언트가 같은 곡선을 그릴 수 있게 한다.
   stepBalls(dt) {
     const steps = Math.max(1, Math.ceil(dt / 0.017)), h = dt / steps, G = RULES.gravity;
@@ -275,7 +338,12 @@ export class Game {
         b.age += h;
         b.x = b.x0 + b.vx * b.age;
         b.z = b.z0 + b.vz * b.age;
-        b.y = b.y0 + b.vy * b.age - 0.5 * G * b.age * b.age;
+        b.y = b.kind === 'stone' ? b.y0 : b.y0 + b.vy * b.age - 0.5 * G * b.age * b.age;
+        if (b.kind === 'stone' && b.age >= b.maxAge) {
+          this.emit('ballEnd', { bid: b.id, k: 'stone', x: r3(b.x), y: r3(b.y), z: r3(b.z), vx: r3(b.vx), vz: r3(b.vz), kind: 'fizzle' });
+          done = true;
+          break;
+        }
         done = this.collide(b);
       }
       if (done) this.balls.splice(i, 1);
@@ -283,7 +351,7 @@ export class Game {
   }
 
   collide(b) {
-    const base = { bid: b.id, x: r3(b.x), y: r3(b.y), z: r3(b.z), vx: r3(b.vx), vz: r3(b.vz) };
+    const base = { bid: b.id, k: b.kind || 'snow', x: r3(b.x), y: r3(b.y), z: r3(b.z), vx: r3(b.vx), vz: r3(b.vz) };
     for (const p of this.players) {
       if (p.team === b.team || p.down) continue; // 같은 팀 눈은 통과
       if (Math.hypot(b.x - p.x, b.z - p.z) < 0.6 && b.y < hitHeight(p) && b.y > -0.1) {
@@ -345,6 +413,7 @@ export class Game {
     return {
       tm: r3(this.time), st: this.state, sT: r3(this.stateT), rd: this.round, sc: this.score, k: this.kills,
       wn: this.winner, w: this.walls.map(w => w.hp), p: this.players.map(packPlayer),
+      it: this.items.map(i => [i.id, i.x, i.z, r3(Math.max(0, i.fallT))]),
     };
   }
 }

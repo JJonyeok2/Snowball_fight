@@ -77,6 +77,14 @@ export const sfx = {
   },
   ground: () => noise(0.07, { type: 'lowpass', f0: 900, f1: 350, vol: 0.13 }),
   dash: () => noise(0.16, { f0: 1400, f1: 3600, q: 2, vol: 0.2 }),
+  stone: () => {
+    noise(0.12, { f0: 2500, f1: 5000, q: 3, vol: 0.28 });
+    tone(1400, 900, 0.07, { type: 'triangle', vol: 0.1 });
+  },
+  clink: () => [1800, 2600].forEach((f, i) => tone(f, f * 0.9, 0.12, { type: 'triangle', vol: 0.12, delay: i * 0.03 })),
+  drop: () => tone(1500, 500, 1.0, { type: 'sine', vol: 0.06 }),
+  land: () => { noise(0.18, { type: 'lowpass', f0: 1200, f1: 300, vol: 0.3 }); tone(220, 90, 0.2, { vol: 0.25 }); },
+  pickup: () => [880, 1175, 1568].forEach((f, i) => tone(f, f, 0.12, { type: 'triangle', vol: 0.14, delay: i * 0.06 })),
   empty: () => tone(220, 180, 0.08, { type: 'square', vol: 0.05 }),
   tick: () => tone(520, 520, 0.09, { type: 'square', vol: 0.07 }),
   go: () => tone(784, 784, 0.22, { type: 'square', vol: 0.09 }),

@@ -5,6 +5,7 @@ import { createWorld, setArena } from './world.js';
 import { Effects } from './effects.js';
 import { WallsView } from './walls.js';
 import { BallsView } from './balls.js';
+import { ItemsView } from './items.js';
 import { buildCharacter, animate } from './character.js';
 import { sfx } from './audio.js';
 
@@ -93,6 +94,7 @@ export class Stage {
     this.camera.lookAt(this.fx.target);
     this.walls = new WallsView(this.scene, makeWalls(mode));
     this.balls = new BallsView(this.scene, this.fx);
+    this.items = new ItemsView(this.scene);
     this.chars = new Map(roster.map(r => [r.id, new CharacterView(this.scene, r, r.id === meId, this.fx)]));
 
     // 조준 곡선 미리보기
@@ -107,7 +109,12 @@ export class Stage {
     );
     this.landRing.rotation.x = -Math.PI / 2;
     this.traj.visible = this.landRing.visible = false;
-    this.scene.add(this.traj, this.landRing);
+    // 얼음돌을 들고 있을 때 보이는 직선 조준선
+    this.lineGeo = new THREE.BufferGeometry();
+    this.lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    this.stoneLine = new THREE.Line(this.lineGeo, new THREE.LineDashedMaterial({ color: '#3aa6e8', dashSize: 0.5, gapSize: 0.25 }));
+    this.stoneLine.visible = false;
+    this.scene.add(this.traj, this.landRing, this.stoneLine);
 
     // 이름표
     this.tagBox = document.getElementById('tags');
@@ -137,6 +144,7 @@ export class Stage {
     this.walls.sync(rs.walls);
     this.walls.update(dt);
     this.balls.set(rs.balls, dt);
+    this.items.update(rs.items || [], rs.time);
     this.fx.update(dt, realDt);
     this.world.update(dt, rs.time);
     this.updatePreview(rs.me, rs.cfg);
@@ -144,6 +152,16 @@ export class Stage {
   }
 
   updatePreview(me, cfg) {
+    const straight = !!(me && me.stones > 0 && !me.charging && !me.down);
+    this.stoneLine.visible = straight;
+    if (straight) {
+      const a = this.lineGeo.attributes.position.array, y = RULES.stoneHeight;
+      const sx = me.x + me.dx * SPAWN_OFFSET, sz = me.z + me.dz * SPAWN_OFFSET;
+      a[0] = sx; a[1] = y; a[2] = sz;
+      a[3] = sx + me.dx * RULES.stoneRange; a[4] = y; a[5] = sz + me.dz * RULES.stoneRange;
+      this.lineGeo.attributes.position.needsUpdate = true;
+      this.stoneLine.computeLineDistances();
+    }
     const on = !!(me && me.charging);
     this.traj.visible = this.landRing.visible = on;
     if (!on) return;
@@ -188,7 +206,7 @@ export class Stage {
     const fx = this.fx, me = this.meId;
     const s = this.quiet ? null : sfx;
     switch (ev.type) {
-      case 'ball': s?.throw(ev.c); break;
+      case 'ball': if (ev.kind === 'stone') s?.stone(); else s?.throw(ev.c); break;
       case 'ballEnd': {
         const p = new THREE.Vector3(ev.x, ev.y, ev.z);
         if (ev.kind === 'hit') {
@@ -198,6 +216,7 @@ export class Stage {
           fx.hitStop(0.07);
           fx.addShake(ev.id === me ? 0.6 : 0.3);
           s?.hit();
+          if (ev.k === 'stone') s?.clink();
         } else if (ev.kind === 'shield') {
           fx.burst(p, 10, 3, 0.8);
           s?.wall();
@@ -210,6 +229,9 @@ export class Stage {
             fx.addShake(0.2);
             s?.wallBreak();
           } else s?.wall();
+        } else if (ev.kind === 'fizzle') {
+          fx.burst(p, 8, 2, 0.7);
+          fx.mark(ev.x, ev.z, 0.6);
         } else if (ev.kind === 'ground') {
           fx.burst(p.setY(0.15), 8, 2, 0.8);
           fx.mark(ev.x, ev.z);
@@ -222,6 +244,13 @@ export class Stage {
       case 'ready': if (ev.id === me) s?.ready(); break;
       case 'empty': if (ev.id === me) { this.hud?.toast('눈이 없어요. Space를 꾹 눌러 뭉치세요'); s?.empty(); } break;
       case 'kill': this.hud?.feed(this.name(ev.by), this.roster.get(ev.by)?.team ?? 0, this.name(ev.id), this.roster.get(ev.id)?.team ?? 1); break;
+      case 'itemDrop': s?.drop(); break;
+      case 'itemLand': fx.burst(new THREE.Vector3(ev.x, 0.2, ev.z), 16, 3, 1); fx.mark(ev.x, ev.z, 1.4); s?.land(); break;
+      case 'itemPick':
+        fx.burst(new THREE.Vector3(ev.x, 0.6, ev.z), 14, 2.5, 0.8);
+        if (ev.id === me) { s?.pickup(); this.hud?.toast(`얼음돌 ${RULES.stonesPerPick}발! 다음 던지기는 직선으로 바로 나가요`); }
+        break;
+      case 'itemGone': fx.burst(new THREE.Vector3(ev.x, 0.3, ev.z), 8, 1.5, 0.6); break;
       case 'respawn': fx.burst(new THREE.Vector3(ev.x, 0.4, ev.z), 18, 3, 1); break;
       case 'left': this.hud?.toast(`${ev.name} 님이 나가서 AI가 이어받아요`); break;
       case 'roundEnd': fx.slowMo(1.1, new THREE.Vector3(ev.x, ev.y, ev.z)); break;

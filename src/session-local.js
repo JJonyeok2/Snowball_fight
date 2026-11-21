@@ -50,7 +50,7 @@ export class LocalSession {
     const g = this.game;
     return {
       time: g.time, state: g.state, stateT: g.stateT, round: g.round, score: g.score, kills: g.kills,
-      winner: g.winner, walls: g.walls.map(w => w.hp), players: g.players, balls: g.balls, cfg: g.cfg,
+      winner: g.winner, walls: g.walls.map(w => w.hp), players: g.players, balls: g.balls, items: g.items, cfg: g.cfg,
       me: g.get(this.meId) || null,
     };
   }
