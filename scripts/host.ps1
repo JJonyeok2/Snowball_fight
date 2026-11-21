@@ -25,7 +25,7 @@ Write-Host "[1/4] Node.js $(node -v) 확인"
 # 2. 최신 코드 받기 (git이 있을 때만)
 if ((Test-Path .git) -and (Get-Command git -ErrorAction SilentlyContinue)) {
   Write-Host "[2/4] 최신 코드 받는 중"
-  git pull --ff-only 2>&1 | Out-Host
+  git pull --ff-only
 } else {
   Write-Host "[2/4] git이 없어서 최신 코드 받기는 건너뛰어요"
 }
