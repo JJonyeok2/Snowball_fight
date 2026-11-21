@@ -123,7 +123,7 @@ function watchFlow(rs) {
 
 // ---------- 루프 ----------
 let last = performance.now();
-let fps = 60, ping = null, infoT = 0;
+let fps = 60, ping = null, srvLag = 0, infoT = 0;
 function frame(now) {
   const rawDt = (now - last) / 1000;
   const realDt = Math.min(rawDt, 0.05);
@@ -132,7 +132,9 @@ function frame(now) {
   infoT -= rawDt;
   if (infoT <= 0) {
     infoT = 0.5;
-    $('netInfo').textContent = `${Math.round(fps)}fps${kind === 'online' && ping !== null ? ` · 핑 ${ping}ms` : ''}`;
+    const on = kind === 'online' && ping !== null;
+    $('netInfo').textContent = `${Math.round(fps)}fps${on ? ` · 핑 ${ping}ms` : ''}${on && srvLag > 40 ? ` · 서버 지연 ${srvLag}ms` : ''}`;
+    $('netInfo').classList.toggle('bad', on && (ping > 150 || srvLag > 60));
   }
   if (session && !paused) {
     let dt = realDt;
@@ -194,6 +196,7 @@ function onNet(m) {
     toMenu();
   } else if (m.t === 'pong') {
     ping = Math.round(performance.now() - m.c);
+    srvLag = m.lag || 0;
   }
 }
 

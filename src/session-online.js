@@ -92,7 +92,8 @@ export class OnlineSession {
   renderState(now) {
     const L = this.latest;
     if (!L) return null;
-    const rt = Math.min(now + this.offset - this.delay, L.tm);
+    // 스냅샷이 늦으면 멈추지 않고 최대 0.25초까지 하던 움직임을 이어서 그린다
+    const rt = Math.min(now + this.offset - this.delay, L.tm + 0.25);
 
     // 이벤트는 자기 시각이 되면 터뜨린다
     while (this.queue.length && this.queue[0].t <= rt) {
@@ -107,8 +108,9 @@ export class OnlineSession {
     for (let i = this.snaps.length - 1; i >= 0; i--) {
       if (this.snaps[i].tm <= rt) { s0 = this.snaps[i]; s1 = this.snaps[i + 1] || s0; break; }
     }
+    if (rt > L.tm && this.snaps.length > 1) { s0 = this.snaps[this.snaps.length - 2]; s1 = L; }
     const span = s1.tm - s0.tm;
-    const al = span > 0 ? Math.min(1, Math.max(0, (rt - s0.tm) / span)) : 1;
+    const al = span > 0 ? Math.min(1 + 0.25 / span, Math.max(0, (rt - s0.tm) / span)) : 1;
 
     const players = [];
     for (const r of this.roster) {
@@ -119,6 +121,7 @@ export class OnlineSession {
       unpackPlayer(A, v.a);
       unpackPlayer(B, v.b);
       Object.assign(v.out, al < 0.5 ? v.a : v.b);
+      if (al > 1 && v.b.speed < 0.1) { v.out.x = v.b.x; v.out.z = v.b.z; players.push(v.out); continue; }
       v.out.x = v.a.x + (v.b.x - v.a.x) * al;
       v.out.z = v.a.z + (v.b.z - v.a.z) * al;
       const dx = v.a.dx + (v.b.dx - v.a.dx) * al, dz = v.a.dz + (v.b.dz - v.a.dz) * al, dl = Math.hypot(dx, dz) || 1;

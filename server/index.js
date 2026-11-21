@@ -43,6 +43,9 @@ const newCode = () => {
   return c;
 };
 const BOT_NAMES = ['눈사람', '고드름', '눈송이', '털장갑'];
+// 최근 2초 동안 틱이 가장 늦게 돈 시간(ms). 서버가 느려서 끊기는지 화면에서 볼 수 있게 핑 응답에 실어 보낸다.
+let serverLag = 0, lagShown = 0;
+setInterval(() => { lagShown = Math.round(serverLag); serverLag = 0; }, 2000);
 let clientSeq = 0;
 
 class Room {
@@ -179,6 +182,7 @@ class Room {
   // setInterval은 느린 서버에서 밀리기 쉬워서, 늦어진 만큼 틱을 몰아서 따라잡는다
   loop() {
     const now = performance.now();
+    serverLag = Math.max(serverLag, now - this.next);
     let n = 0;
     while (this.game && now >= this.next && n < 4) { this.tick(); this.next += TICK * 1000; n++; }
     if (now - this.next > 250) this.next = now;
@@ -192,11 +196,12 @@ class Room {
       const bot = this.bots.get(p.id);
       if (bot) return [bot.update(TICK)];
       const q = this.inputs.get(p.id) || [];
-      // 밀린 입력이 많으면 한 번에 여러 개 처리해서 따라잡는다
-      const batch = q.splice(0, q.length > 3 ? q.length - 1 : 1);
+      // 도착한 입력은 전부 순서대로 처리한다. 클라이언트가 같은 입력으로 미리 움직여 봤으니 결과가 맞아떨어진다.
+      const batch = q.splice(0, 10);
       if (!batch.length) {
+        // 입력이 늦게 오면 멋대로 움직이지 않고 제자리에서 기다린다 (누르고 있던 차지/뭉치기는 유지)
         const last = this.lastIn.get(p.id);
-        return [last ? { ...last, dash: false, cancel: false } : null];
+        return [last ? { ...last, mx: 0, mz: 0, dash: false, cancel: false } : null];
       }
       this.lastIn.set(p.id, batch[batch.length - 1]);
       this.acks.set(p.id, batch[batch.length - 1].s);
@@ -245,7 +250,7 @@ wss.on('connection', ws => {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m.t !== 'string') return;
-    if (m.t === 'ping') { send(c, { t: 'pong', c: m.c }); return; }
+    if (m.t === 'ping') { send(c, { t: 'pong', c: m.c, lag: lagShown }); return; }
     if (c.room) {
       if (m.t === 'leave') { c.room.leave(c); send(c, { t: 'left' }); return; }
       c.room.handle(c, m);
