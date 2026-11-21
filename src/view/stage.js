@@ -128,10 +128,13 @@ export class Stage {
     for (const r of roster) {
       const el = document.createElement('div');
       el.className = `tag t${r.team}${r.id === meId ? ' me' : ''}`;
-      el.innerHTML = `<span class="nm"></span><span class="hp">${'<i></i>'.repeat(RULES.hp)}</span><span class="rs"></span>`;
+      el.innerHTML = `<span class="nm"></span><span class="ammo">${'<i></i>'.repeat(RULES.maxAmmo)}<b></b></span><span class="hpbar">${'<i></i>'.repeat(RULES.hp)}</span><span class="rs"></span>`;
       el.querySelector('.nm').textContent = r.id === meId ? '나' : r.name;
       this.tagBox.appendChild(el);
-      this.tags.set(r.id, { el, dots: [...el.querySelectorAll('.hp i')], rs: el.querySelector('.rs'), prevHp: -1, prevRs: '' });
+      this.tags.set(r.id, {
+        el, dots: [...el.querySelectorAll('.hpbar i')], balls: [...el.querySelectorAll('.ammo i')], ammo: el.querySelector('.ammo'),
+        rs: el.querySelector('.rs'), prevHp: -1, prevAmmo: -1, prevStone: -1, prevRs: '',
+      });
     }
     this.v = new THREE.Vector3();
     this.resize();
@@ -196,12 +199,18 @@ export class Stage {
       const tg = this.tags.get(p.id);
       if (!tg) continue;
       const q = p.id === this.meId && rs.me ? rs.me : p;
-      this.v.set(q.x, q.down ? 1.2 : 2.6, q.z).project(this.camera);
+      this.v.set(q.x, q.down ? 1.2 : 2.55, q.z).project(this.camera);
       tg.el.style.transform = `translate(${((this.v.x + 1) / 2) * W}px, ${((1 - this.v.y) / 2) * H}px) translate(-50%, -100%)`;
       if (tg.prevHp !== q.hp) {
         tg.prevHp = q.hp;
         tg.dots.forEach((d, i) => d.classList.toggle('off', i >= q.hp));
       }
+      if (tg.prevAmmo !== q.ammo) {
+        tg.prevAmmo = q.ammo;
+        tg.balls.forEach((d, i) => d.classList.toggle('on', i < q.ammo));
+      }
+      const st = q.stones > 0 ? 1 : 0;
+      if (tg.prevStone !== st) { tg.prevStone = st; tg.ammo.classList.toggle('stone', !!st); }
       const txt = q.down && this.M.respawn && rs.state === 'play' ? `${Math.max(0, q.respawnT).toFixed(1)}초` : '';
       if (txt !== tg.prevRs) { tg.prevRs = txt; tg.rs.textContent = txt; tg.el.classList.toggle('down', !!q.down); }
     }

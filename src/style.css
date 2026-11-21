@@ -28,12 +28,17 @@ kbd { display: inline-block; min-width: 24px; margin-right: 2px; padding: 1px 6p
 .tag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; white-space: nowrap; will-change: transform; }
 .tag .nm { padding: 1px 8px; border-radius: 999px; background: rgba(28, 42, 69, .72); color: #fff; font: 13px Jua, sans-serif; }
 .tag.me .nm { background: var(--team); }
-.tag .hp { display: flex; gap: 3px; }
-.tag .hp i { width: 8px; height: 8px; border-radius: 50%; background: var(--team); display: block; box-shadow: 0 0 0 1.5px #fff; }
-.tag .hp i.off { background: #c9d3e2; }
+.tag .ammo { display: flex; gap: 3px; align-items: center; height: 11px; }
+.tag .ammo i { width: 9px; height: 9px; border-radius: 50%; display: block; border: 1.5px dashed rgba(28, 42, 69, .35); }
+.tag .ammo i.on { border: 0; background: radial-gradient(circle at 35% 30%, #fff 0 40%, #dbe7f5 75%, #b4c8e4); box-shadow: 0 1px 2px rgba(28, 42, 69, .45); }
+.tag .ammo b { display: none; width: 9px; height: 11px; margin-left: 2px; background: linear-gradient(160deg, #c8ecff, #3aa6e8); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.tag .ammo.stone b { display: block; }
+.tag .hpbar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; width: 54px; height: 7px; padding: 1.5px; border-radius: 4px; background: rgba(28, 42, 69, .55); }
+.tag .hpbar i { display: block; border-radius: 2px; background: var(--team); transition: background .2s; }
+.tag .hpbar i.off { background: rgba(255, 255, 255, .25); }
 .tag .rs { font: 14px Jua, sans-serif; color: var(--ink); text-shadow: 0 1px 0 #fff; }
-.tag.down .hp { display: none; }
-body:not(.playing) .tag .hp { display: none; }
+.tag.down .hpbar, .tag.down .ammo { display: none; }
+body:not(.playing) .tag .hpbar, body:not(.playing) .tag .ammo { display: none; }
 
 /* 점수판 */
 #scoreboard { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); padding: 8px 14px; display: flex; gap: 14px; align-items: center; white-space: nowrap; }
@@ -43,17 +48,18 @@ body:not(.playing) .tag .hp { display: none; }
 .kills { font: 22px Jua, sans-serif; color: var(--team); font-weight: 400; }
 body:not(.duo) .kills { display: none; }
 body.duo #scoreboard .hp { display: none; }
-.hp { display: flex; gap: 5px; }
-.hp i { width: 16px; height: 16px; border-radius: 50%; display: block; background: var(--team, var(--red)); transition: transform .2s, background .2s; }
-.hp.mine i { width: 14px; height: 14px; }
-.hp i.off { background: #d6deea !important; transform: scale(.75); }
+/* 체력: 세 칸짜리 바 */
+.hp { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; width: 72px; height: 12px; }
+.hp i { display: block; border-radius: 3px; background: var(--team, var(--red)); transition: background .2s; }
+.hp.mine { width: 110px; height: 14px; }
+.hp i.off { background: #dbe2ed !important; }
 .mid { display: flex; gap: 8px; align-items: center; padding: 0 10px; border-inline: 1px solid var(--line); }
 #roundNo { font: 15px Jua, sans-serif; color: var(--sub); }
 .pips { display: flex; gap: 4px; }
 .pips i { width: 10px; height: 10px; border-radius: 3px; background: #dbe2ed; display: block; transform: rotate(45deg); }
 .pips i.on { background: var(--team); }
 
-#feed { position: absolute; right: 16px; top: 72px; display: grid; gap: 6px; justify-items: end; }
+#feed { position: absolute; right: 16px; top: 96px; display: grid; gap: 6px; justify-items: end; }
 #feed .kill { padding: 4px 10px; border-radius: 10px; background: var(--paper); font-size: 13px; box-shadow: 0 3px 10px rgba(40, 60, 110, .15); white-space: nowrap; }
 #feed b { font-weight: 700; }
 #feed b.t0 { color: var(--red); }
@@ -97,19 +103,18 @@ body.team1 #ammoBox .hp i { background: var(--blue); }
 @keyframes pop { to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 #respawn { position: absolute; left: 50%; top: 56%; transform: translateX(-50%); padding: 8px 18px; border-radius: 999px; background: rgba(28, 42, 69, .8); color: #fff; font: 22px Jua, sans-serif; opacity: 0; transition: opacity .2s; white-space: nowrap; }
 #respawn.show { opacity: 1; }
-#netInfo { position: absolute; right: 16px; bottom: 12px; padding: 3px 10px; border-radius: 999px; background: rgba(28, 42, 69, .55); color: #fff; font: 700 12px "Gothic A1", sans-serif; white-space: nowrap; }
+#netInfo { position: absolute; right: 8px; top: 6px; padding: 3px 10px; border-radius: 999px; background: rgba(28, 42, 69, .55); color: #fff; font: 700 12px "Gothic A1", sans-serif; white-space: nowrap; }
 #toast { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px; background: rgba(28, 42, 69, .86); color: #fff; font-size: 14px; opacity: 0; transition: opacity .2s; white-space: nowrap; }
 #toast.show { opacity: 1; }
 
 /* 설정 */
-#tune { position: absolute; right: 16px; top: 14px; width: 260px; max-height: calc(100vh - 28px); overflow: auto; pointer-events: auto; padding: 4px 14px; }
+#tune { position: absolute; right: 16px; top: 36px; width: 260px; max-height: calc(100vh - 50px); overflow: auto; pointer-events: auto; padding: 4px 14px; }
 #tune:not([open]) { width: auto; }
 #tune summary { cursor: pointer; font: 18px Jua, sans-serif; padding: 8px 0; list-style: none; }
 #tune summary::-webkit-details-marker { display: none; }
 #tune summary::after { content: " ▾"; color: #7b8cab; }
 #tune[open] summary::after { content: " ▴"; }
 body.online .practiceOnly { display: none; }
-body.duo #feed { top: 72px; }
 .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 6px 0 10px; font-size: 13px; }
 .row output { font-weight: 700; white-space: nowrap; }
 .row input { grid-column: 1 / -1; width: 100%; accent-color: var(--shade); height: 22px; }
