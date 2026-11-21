@@ -97,6 +97,7 @@ body.team1 #ammoBox .hp i { background: var(--blue); }
 @keyframes pop { to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 #respawn { position: absolute; left: 50%; top: 56%; transform: translateX(-50%); padding: 8px 18px; border-radius: 999px; background: rgba(28, 42, 69, .8); color: #fff; font: 22px Jua, sans-serif; opacity: 0; transition: opacity .2s; white-space: nowrap; }
 #respawn.show { opacity: 1; }
+#netInfo { position: absolute; right: 16px; bottom: 12px; padding: 3px 10px; border-radius: 999px; background: rgba(28, 42, 69, .55); color: #fff; font: 700 12px "Gothic A1", sans-serif; white-space: nowrap; }
 #toast { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px; background: rgba(28, 42, 69, .86); color: #fff; font-size: 14px; opacity: 0; transition: opacity .2s; white-space: nowrap; }
 #toast.show { opacity: 1; }
 
@@ -135,6 +136,8 @@ input:not([type]) { width: 100%; min-height: 46px; padding: 8px 12px; border: 2p
 .hint { color: var(--sub); margin: 8px 0 0; }
 
 /* 메뉴, 로비, 결과 */
+.textBtn { min-height: 40px; padding: 4px 0; background: none; color: var(--sub); font: 14px "Gothic A1", sans-serif; text-decoration: underline; text-underline-offset: 3px; }
+#invite .code { margin-bottom: 6px; }
 .overlay { position: fixed; inset: 0; display: grid; place-items: safe center; overflow: auto; padding: 16px 0; background: rgba(220, 200, 214, .35); }
 #pause { cursor: pointer; background: rgba(220, 200, 214, .5); backdrop-filter: blur(3px); }
 .panel { padding: 26px 28px 18px; width: min(470px, calc(100vw - 32px)); }

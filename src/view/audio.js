@@ -85,6 +85,7 @@ export const sfx = {
   drop: () => tone(1500, 500, 1.0, { type: 'sine', vol: 0.06 }),
   land: () => { noise(0.18, { type: 'lowpass', f0: 1200, f1: 300, vol: 0.3 }); tone(220, 90, 0.2, { vol: 0.25 }); },
   pickup: () => [880, 1175, 1568].forEach((f, i) => tone(f, f, 0.12, { type: 'triangle', vol: 0.14, delay: i * 0.06 })),
+  cancel: () => tone(520, 260, 0.12, { type: 'sine', vol: 0.12 }),
   empty: () => tone(220, 180, 0.08, { type: 'square', vol: 0.05 }),
   tick: () => tone(520, 520, 0.09, { type: 'square', vol: 0.07 }),
   go: () => tone(784, 784, 0.22, { type: 'square', vol: 0.09 }),

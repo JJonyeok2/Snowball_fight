@@ -82,7 +82,7 @@ export function unpackPlayer(a, p) {
 
 /*
   플레이어 한 명을 입력 하나만큼 진행한다. 서버, 연습 모드, 내 캐릭터 예측이 모두 이 함수를 쓴다.
-  I: { mx, mz, ax, az, pack, charge, dash } (없으면 null)
+  I: { mx, mz, ax, az, pack, charge, dash, cancel } (없으면 null)
   ctx: { cfg, mode, walls, active, emit(type, p, extra), spawnBall(p, c), spawnStone(p) }
 */
 export function stepPlayer(p, I, dt, ctx) {
@@ -119,7 +119,9 @@ export function stepPlayer(p, I, dt, ctx) {
   // 차지와 던지기 (누르는 순간 시작, 떼는 순간 던짐)
   if (!can || p.hitT > 0 || p.dashT > 0) p.charging = false;
   else if (p.charging) {
-    if (chargeIn) p.chargeT += dt;
+    // 차지 중 취소: 던지지 않고 눈덩이도 그대로. 버튼을 뗐다가 다시 눌러야 새로 차지한다.
+    if (I && I.cancel) { p.charging = false; p.chargeT = 0; ctx.emit('cancel', p); }
+    else if (chargeIn) p.chargeT += dt;
     else {
       const c = chargeFrac(p, cfg);
       p.charging = false;

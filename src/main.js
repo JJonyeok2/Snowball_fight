@@ -34,7 +34,7 @@ try {
 
 // ---------- 렌더러 ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); // 레티나에서 4배 픽셀을 그리지 않게
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -60,6 +60,8 @@ function mount(sess, opts) {
   stage = new Stage(renderer, { mode: sess.mode, roster: sess.roster, meId: sess.meId, hud, ...opts });
   input.camera = stage.camera;
   input.flip = stage.flip;
+  input.getMe = () => (session.meId >= 0 ? (session.me || session.game.get(session.meId)) : null);
+  input.aimMode = 'mouse';
   document.body.classList.toggle('team1', stage.myTeam === 1);
   input.releaseAll();
   watch = {};
@@ -67,7 +69,7 @@ function mount(sess, opts) {
 }
 
 function show(id) {
-  for (const o of ['menu', 'lobby', 'result', 'pause']) $(o).hidden = o !== id;
+  for (const o of ['menu', 'invite', 'lobby', 'result', 'pause']) $(o).hidden = o !== id;
 }
 
 function startDemo() {
@@ -121,9 +123,17 @@ function watchFlow(rs) {
 
 // ---------- 루프 ----------
 let last = performance.now();
+let fps = 60, ping = null, infoT = 0;
 function frame(now) {
-  const realDt = Math.min((now - last) / 1000, 0.05);
+  const rawDt = (now - last) / 1000;
+  const realDt = Math.min(rawDt, 0.05);
   last = now;
+  if (rawDt > 0) fps += (1 / rawDt - fps) * 0.05;
+  infoT -= rawDt;
+  if (infoT <= 0) {
+    infoT = 0.5;
+    $('netInfo').textContent = `${Math.round(fps)}fps${kind === 'online' && ping !== null ? ` · 핑 ${ping}ms` : ''}`;
+  }
   if (session && !paused) {
     let dt = realDt;
     if (session instanceof LocalSession) {
@@ -179,8 +189,11 @@ function onNet(m) {
   } else if (m.t === 'error') {
     if (!$('lobby').hidden) $('lobbyMsg').textContent = m.msg;
     else menuMsg(m.msg);
+    if (!$('invite').hidden) $('inviteForm').querySelector('button').disabled = false;
   } else if (m.t === 'left') {
     toMenu();
+  } else if (m.t === 'pong') {
+    ping = Math.round(performance.now() - m.c);
   }
 }
 
@@ -189,6 +202,8 @@ function onNetClose() {
   const was = kind === 'online' || !$('lobby').hidden;
   if (was) { toMenu(); menuMsg('서버와 연결이 끊겼어요'); }
 }
+
+setInterval(() => { if (net && net.open) net.send({ t: 'ping', c: performance.now() }); }, 2000);
 
 async function ensureNet() {
   if (net && net.open) return net;
@@ -207,13 +222,17 @@ async function ensureNet() {
   }
 }
 
-function nick() {
-  const n = $('nick').value.trim().slice(0, 10) || '플레이어';
+function nick(id = 'nick') {
+  const n = $(id).value.trim().slice(0, 10) || '플레이어';
   store.set('snow-nick', n);
   return n;
 }
 
-function menuMsg(t) { $('menuMsg').textContent = t; }
+// 지금 보이는 화면(메뉴 또는 초대 화면)에 안내 문구를 띄운다
+function menuMsg(t) {
+  $('menuMsg').textContent = t;
+  $('inviteMsg').textContent = t;
+}
 
 function toMenu() {
   if (kind !== 'menu') startDemo();
@@ -222,6 +241,7 @@ function toMenu() {
 }
 
 function renderLobby(m) {
+  $('inviteForm').querySelector('button').disabled = false;
   $('roomCode').textContent = m.code;
   $('lobbyMode').textContent = MODES[m.mode].label;
   $('lobbyMsg').textContent = '';
@@ -355,15 +375,30 @@ $('resetCfg').addEventListener('click', () => {
 });
 syncTune();
 
-// 초대 링크로 들어온 경우
-const invite = new URLSearchParams(location.search).get('room');
-if (invite) {
-  $('joinCode').value = invite.toUpperCase().slice(0, 4);
-  menuMsg('초대받은 방이에요. 이름을 적고 입장을 누르세요');
-  setTimeout(() => $('nick').focus(), 50);
-}
+// 초대 링크로 들어온 경우: 이름만 적고 바로 입장하는 화면
+const invite = (new URLSearchParams(location.search).get('room') || '').toUpperCase().slice(0, 4);
+$('inviteNick').value = store.get('snow-nick', '');
+$('inviteForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  initAudio();
+  const btn = $('inviteForm').querySelector('button');
+  btn.disabled = true;
+  try { await ensureNet(); } catch { btn.disabled = false; return; }
+  $('nick').value = $('inviteNick').value;
+  net.send({ t: 'join', code: invite, name: nick('inviteNick') });
+});
+$('inviteSkip').addEventListener('click', () => {
+  history.replaceState(null, '', location.pathname + location.search.replace(/([?&])room=[^&]*&?/, '$1').replace(/[?&]$/, ''));
+  menuMsg('');
+  show('menu');
+});
 
 startDemo();
-show('menu');
+if (invite.length === 4) {
+  $('inviteCode').textContent = invite;
+  $('joinCode').value = invite;
+  show('invite');
+  setTimeout(() => $('inviteNick').focus(), 50);
+} else show('menu');
 if (location.search.includes('debug')) window.__snow = { get session() { return session; }, get stage() { return stage; }, RULES };
 requestAnimationFrame(frame);

@@ -38,6 +38,7 @@
       <div class="bar"><span id="chargeBar"></span></div>
     </div>
 
+    <div id="netInfo"></div>
     <div id="banner"></div>
     <div id="respawn"></div>
     <div id="toast"></div>
@@ -82,13 +83,26 @@
     <p id="menuMsg" class="msg" role="status"></p>
     <ul class="keys">
       <li><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>이동</li>
-      <li><span>마우스</span>조준</li>
-      <li><span><kbd>Space</kbd> / 우클릭 꾹</span>눈 뭉치기</li>
-      <li><span>좌클릭 누르고 떼기</span>차지 던지기</li>
+      <li><span>마우스 또는 <kbd>←</kbd><kbd>→</kbd></span>조준</li>
+      <li><span>좌클릭 또는 <kbd>↑</kbd> 누르고 떼기</span>차지 던지기</li>
+      <li><span><kbd>Space</kbd> / 우클릭 / <kbd>↓</kbd> 꾹</span>눈 뭉치기</li>
+      <li><span>차지 중 <kbd>Q</kbd> / 우클릭 / <kbd>Space</kbd></span>차지 취소</li>
       <li><span><kbd>Shift</kbd></span>대시</li>
       <li><span>파란 얼음돌</span>주우면 다음 던지기가 직선으로</li>
       <li><span><kbd>Esc</kbd></span>일시정지 (연습)</li>
     </ul>
+  </div></div>
+
+  <div id="invite" class="overlay" hidden><div class="card panel">
+    <p class="label">눈싸움에 초대받았어요</p>
+    <p class="code" id="inviteCode">----</p>
+    <form id="inviteForm">
+      <label class="label" for="inviteNick">내 이름</label>
+      <input id="inviteNick" maxlength="10" placeholder="이름 (10자까지)" autocomplete="nickname">
+      <button type="submit" class="primary full">입장하기</button>
+    </form>
+    <p id="inviteMsg" class="msg" role="status"></p>
+    <button type="button" class="textBtn" id="inviteSkip">초대 무시하고 처음 화면으로</button>
   </div></div>
 
   <div id="lobby" class="overlay" hidden><div class="card panel wide">

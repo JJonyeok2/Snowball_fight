@@ -123,7 +123,7 @@ class Room {
     if (m.t === 'in') {
       if (!this.game || c.pid == null) return;
       const q = this.inputs.get(c.pid);
-      if (q && q.length < 30) q.push({ s: m.s | 0, mx: +m.mx || 0, mz: +m.mz || 0, ax: +m.ax || 0, az: +m.az || 0, pack: !!m.p, charge: !!m.c, dash: !!m.d });
+      if (q && q.length < 30) q.push({ s: m.s | 0, mx: +m.mx || 0, mz: +m.mz || 0, ax: +m.ax || 0, az: +m.az || 0, pack: !!m.p, charge: !!m.c, dash: !!m.d, cancel: !!m.x });
       return;
     }
     if (this.game) return;
@@ -172,7 +172,17 @@ class Room {
     for (const c of this.clients.values()) send(c, { t: 'start', mode: this.mode, roster, you: c.pid });
     g.startMatch();
     this.endAt = 0;
-    this.timer = setInterval(() => this.tick(), TICK * 1000);
+    this.next = performance.now();
+    this.loop();
+  }
+
+  // setInterval은 느린 서버에서 밀리기 쉬워서, 늦어진 만큼 틱을 몰아서 따라잡는다
+  loop() {
+    const now = performance.now();
+    let n = 0;
+    while (this.game && now >= this.next && n < 4) { this.tick(); this.next += TICK * 1000; n++; }
+    if (now - this.next > 250) this.next = now;
+    if (this.game) this.timer = setTimeout(() => this.loop(), Math.max(1, this.next - performance.now()));
   }
 
   tick() {
@@ -186,7 +196,7 @@ class Room {
       const batch = q.splice(0, q.length > 3 ? q.length - 1 : 1);
       if (!batch.length) {
         const last = this.lastIn.get(p.id);
-        return [last ? { ...last, dash: false } : null];
+        return [last ? { ...last, dash: false, cancel: false } : null];
       }
       this.lastIn.set(p.id, batch[batch.length - 1]);
       this.acks.set(p.id, batch[batch.length - 1].s);
@@ -194,9 +204,9 @@ class Room {
     });
     const snap = g.snapshot();
     snap.ev = g.drain();
+    const body = JSON.stringify(snap).slice(1); // 한 번만 직렬화하고 사람마다 ack만 붙인다
     for (const c of this.clients.values()) {
-      snap.ack = this.acks.get(c.pid) ?? 0;
-      send(c, { t: 'snap', ...snap });
+      if (c.ws.readyState === 1) c.ws.send(`{"t":"snap","ack":${this.acks.get(c.pid) ?? 0},${body}`);
     }
     if (g.state === 'matchEnd') {
       this.endAt += TICK;
@@ -212,7 +222,7 @@ class Room {
   }
 
   stop() {
-    clearInterval(this.timer);
+    clearTimeout(this.timer);
     this.timer = null;
     this.game = null;
     for (const c of this.clients.values()) c.pid = null;
@@ -235,6 +245,7 @@ wss.on('connection', ws => {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m.t !== 'string') return;
+    if (m.t === 'ping') { send(c, { t: 'pong', c: m.c }); return; }
     if (c.room) {
       if (m.t === 'leave') { c.room.leave(c); send(c, { t: 'left' }); return; }
       c.room.handle(c, m);

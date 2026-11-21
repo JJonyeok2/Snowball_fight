@@ -2,14 +2,14 @@ import { Game, stepPlayer, unpackPlayer, newPlayer } from '../shared/sim.js';
 import { DEFAULTS, RULES } from '../shared/rules.js';
 
 const STEP = 1 / RULES.tickRate;
-const DELAY = 0.1; // 다른 사람은 100ms 뒤의 모습을 보간해서 그린다
 const r2 = v => Math.round(v * 100) / 100;
 
 /*
   온라인 한 판.
   - 내 캐릭터: 입력을 서버에 보내면서 같은 sim 코드로 미리 움직여 보고(예측),
     서버 스냅샷이 오면 그 상태에서 아직 처리 안 된 입력을 다시 적용해 맞춘다(보정).
-  - 다른 사람과 눈덩이: 서버 시간 기준 100ms 전 모습을 스냅샷 두 개 사이에서 보간한다.
+  - 다른 사람과 눈덩이: 서버 시간보다 조금 늦은 모습을 스냅샷 두 개 사이에서 보간한다.
+    늦게 도착하는 스냅샷이 많으면(지터) 그만큼 더 늦춰서 끊기지 않게 한다.
 */
 export class OnlineSession {
   constructor(net, msg) {
@@ -24,6 +24,8 @@ export class OnlineSession {
     this.snaps = [];
     this.latest = null;
     this.offset = null;
+    this.jitter = 0.02;
+    this.delay = 0.1;
     this.seq = 0;
     this.pending = [];
     this.acc = 0;
@@ -39,7 +41,10 @@ export class OnlineSession {
   onSnap(s) {
     const now = performance.now() / 1000;
     const sample = s.tm - now;
-    this.offset = this.offset === null ? sample : this.offset + (sample - this.offset) * 0.05;
+    if (this.offset === null) this.offset = sample;
+    else if (sample > this.offset) this.offset += (sample - this.offset) * 0.5; // 일찍 온 건 빨리 따라가고
+    else this.offset += (sample - this.offset) * 0.01; // 늦게 온 건 천천히
+    this.jitter += (this.offset - sample - this.jitter) * 0.1;
     this.snaps.push(s);
     if (this.snaps.length > 60) this.snaps.shift();
     this.latest = s;
@@ -69,7 +74,7 @@ export class OnlineSession {
       n++;
       const I = input.sample();
       I.s = ++this.seq;
-      this.net.send({ t: 'in', s: I.s, mx: r2(I.mx), mz: r2(I.mz), ax: r2(I.ax), az: r2(I.az), p: I.pack ? 1 : 0, c: I.charge ? 1 : 0, d: I.dash ? 1 : 0 });
+      this.net.send({ t: 'in', s: I.s, mx: r2(I.mx), mz: r2(I.mz), ax: r2(I.ax), az: r2(I.az), p: I.pack ? 1 : 0, c: I.charge ? 1 : 0, d: I.dash ? 1 : 0, x: I.cancel ? 1 : 0 });
       this.pending.push(I);
       this.prev.x = this.me.x; this.prev.z = this.me.z;
       this.ctx.active = this.latest.st === 'play';
@@ -78,6 +83,8 @@ export class OnlineSession {
     if (this.acc > STEP * 4) this.acc = 0;
     const k = Math.exp(-12 * realDt);
     this.err.x *= k; this.err.z *= k;
+    const want = Math.min(0.35, Math.max(0.08, STEP + 0.03 + this.jitter * 2.5));
+    this.delay += (want - this.delay) * Math.min(1, realDt * 2);
   }
 
   takeEvents() { const e = this.fired; this.fired = []; return e; }
@@ -85,7 +92,7 @@ export class OnlineSession {
   renderState(now) {
     const L = this.latest;
     if (!L) return null;
-    const rt = Math.min(now + this.offset - DELAY, L.tm);
+    const rt = Math.min(now + this.offset - this.delay, L.tm);
 
     // 이벤트는 자기 시각이 되면 터뜨린다
     while (this.queue.length && this.queue[0].t <= rt) {

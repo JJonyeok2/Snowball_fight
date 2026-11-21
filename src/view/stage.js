@@ -114,7 +114,13 @@ export class Stage {
     this.lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
     this.stoneLine = new THREE.Line(this.lineGeo, new THREE.LineDashedMaterial({ color: '#3aa6e8', dashSize: 0.5, gapSize: 0.25 }));
     this.stoneLine.visible = false;
-    this.scene.add(this.traj, this.landRing, this.stoneLine);
+    // 내가 보고 있는 방향 표시 (방향키 조준할 때 특히 필요)
+    this.aimMark = new THREE.Mesh(
+      new THREE.CircleGeometry(0.3, 3),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.75, depthWrite: false }),
+    );
+    this.aimMark.visible = false;
+    this.scene.add(this.traj, this.landRing, this.stoneLine, this.aimMark);
 
     // 이름표
     this.tagBox = document.getElementById('tags');
@@ -152,6 +158,11 @@ export class Stage {
   }
 
   updatePreview(me, cfg) {
+    this.aimMark.visible = !!(me && !me.down);
+    if (me && !me.down) {
+      this.aimMark.position.set(me.x + me.dx * 1.15, 0.06, me.z + me.dz * 1.15);
+      this.aimMark.rotation.set(-Math.PI / 2, 0, Math.atan2(-me.dz, me.dx));
+    }
     const straight = !!(me && me.stones > 0 && !me.charging && !me.down);
     this.stoneLine.visible = straight;
     if (straight) {
@@ -224,7 +235,7 @@ export class Stage {
           this.walls.hit(ev.wid, ev.hp, ev.vx, ev.vz);
           fx.burst(p, 12, 3);
           if (ev.hp <= 0) {
-            const w = this.walls.list[ev.wid].g.position;
+            const w = this.walls.walls[ev.wid];
             fx.burst(new THREE.Vector3(w.x, 0.5, w.z), 30, 4.5, 1.3);
             fx.addShake(0.2);
             s?.wallBreak();
@@ -241,6 +252,7 @@ export class Stage {
       }
       case 'dash': s?.dash(); fx.burst(new THREE.Vector3(ev.x, 0.2, ev.z), 8, 2, 0.8); break;
       case 'pack': s?.pack(ev.id === me ? 1 : 0.4); break;
+      case 'cancel': if (ev.id === me) s?.cancel(); break;
       case 'ready': if (ev.id === me) s?.ready(); break;
       case 'empty': if (ev.id === me) { this.hud?.toast('눈이 없어요. Space를 꾹 눌러 뭉치세요'); s?.empty(); } break;
       case 'kill': this.hud?.feed(this.name(ev.by), this.roster.get(ev.by)?.team ?? 0, this.name(ev.id), this.roster.get(ev.id)?.team ?? 1); break;

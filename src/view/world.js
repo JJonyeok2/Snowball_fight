@@ -28,17 +28,31 @@ export function terrainHeight(x, z) {
   return n * (0.04 + out * 0.9) + out * 0.6;
 }
 
-function tree(scene, x, z, s) {
-  const g = new THREE.Group();
-  g.position.set(x, terrainHeight(x, z), z);
-  g.scale.setScalar(s);
-  g.rotation.y = Math.random() * 6;
-  scene.add(g);
-  mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.8, 6), mat('#6b4f3a'), g, 0, 0.4, 0);
+// 나무는 부위별로 한 번에 그린다 (나무 16그루 x 7부위를 그리기 호출 7번으로)
+function forest(scene, list) {
+  const parts = [[new THREE.CylinderGeometry(0.16, 0.22, 0.8, 6), mat('#6b4f3a'), 0.4]];
   const pine = mat('#2f5d50'), snow = mat('#ffffff');
   [[1.35, 1.4, 1.25], [1.05, 1.25, 2.05], [0.72, 1.05, 2.75]].forEach(([r, h, y]) => {
-    mesh(new THREE.ConeGeometry(r, h, 7), pine, g, 0, y, 0);
-    mesh(new THREE.ConeGeometry(r * 0.6, h * 0.5, 7), snow, g, 0, y + h * 0.28, 0);
+    parts.push([new THREE.ConeGeometry(r, h, 7), pine, y]);
+    parts.push([new THREE.ConeGeometry(r * 0.6, h * 0.5, 7), snow, y + h * 0.28]);
+  });
+  const base = new THREE.Object3D(), local = new THREE.Matrix4(), out = new THREE.Matrix4();
+  const meshes = parts.map(([geo, m]) => {
+    const im = new THREE.InstancedMesh(geo, m, list.length);
+    im.castShadow = im.receiveShadow = true;
+    scene.add(im);
+    return im;
+  });
+  list.forEach(([x, z, s], i) => {
+    base.position.set(x, terrainHeight(x, z), z);
+    base.scale.setScalar(s);
+    base.rotation.y = Math.random() * 6;
+    base.updateMatrix();
+    parts.forEach(([, , y], j) => {
+      local.makeTranslation(0, y, 0);
+      out.multiplyMatrices(base.matrix, local);
+      meshes[j].setMatrixAt(i, out);
+    });
   });
 }
 
@@ -137,15 +151,23 @@ export function createWorld(scene) {
   scene.add(dash);
 
   // 나무
-  [[-19, -8, 1.3], [-21, 2, 1.1], [-19.5, 9, 1.5], [19, -9, 1.4], [21, 1, 1.2], [19.6, 8.5, 1.1],
+  forest(scene, [[-19, -8, 1.3], [-21, 2, 1.1], [-19.5, 9, 1.5], [19, -9, 1.4], [21, 1, 1.2], [19.6, 8.5, 1.1],
    [-10, -15, 1.2], [4, -15.5, 1.5], [12, -14.5, 1.0], [-3, -16, 1.0], [-16, -13.5, 1.4], [17, -13.5, 1.3],
    [-23, -4, 1.3], [23, -4, 1.4], [-22, 12, 1.2], [22, 12, 1.3]]
-    .forEach(([x, z, s]) => tree(scene, x * sx, z * sz, s));
+    .map(([x, z, s]) => [x * sx, z * sz, s]));
 
   // 뒤쪽 나무 울타리
   const wood = mat('#8a6448');
   const fz = -(HZ + 2.6), fx = Math.floor(HX - 3);
-  for (let x = -fx; x <= fx; x += 2) mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.1, 6), wood, scene, x, 0.55 + terrainHeight(x, fz), fz);
+  const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.08, 0.1, 1.1, 6), wood, fx + 1);
+  posts.castShadow = posts.receiveShadow = true;
+  n = 0;
+  for (let x = -fx; x <= fx; x += 2) {
+    d.position.set(x, 0.55 + terrainHeight(x, fz), fz); d.scale.set(1, 1, 1); d.rotation.set(0, 0, 0); d.updateMatrix();
+    posts.setMatrixAt(n++, d.matrix);
+  }
+  posts.count = n;
+  scene.add(posts);
   for (const y of [0.45, 0.85]) mesh(new THREE.BoxGeometry(fx * 2 + 0.4, 0.1, 0.06), wood, scene, 0, y + 0.1 + terrainHeight(0, fz), fz);
 
   snowman(scene, -(HX + 2.6), -5.5 * sz, 0.9);
@@ -153,18 +175,36 @@ export function createWorld(scene) {
   sled(scene, HX + 2.2, -6.5 * sz, 0.5);
   sled(scene, -(HX + 2.4), 6.8 * sz, -0.4);
 
-  // 랜턴
+  // 랜턴: 진짜 점광원은 모든 물체 계산을 무겁게 해서, 빛 번짐 그림으로 흉내 낸다
   const lamps = [];
+  const gcv = document.createElement('canvas');
+  gcv.width = gcv.height = 64;
+  const g2 = gcv.getContext('2d');
+  const gg2 = g2.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gg2.addColorStop(0, 'rgba(255,255,255,1)');
+  gg2.addColorStop(0.35, 'rgba(255,255,255,.35)');
+  gg2.addColorStop(1, 'rgba(255,255,255,0)');
+  g2.fillStyle = gg2;
+  g2.fillRect(0, 0, 64, 64);
+  const glowTex = new THREE.CanvasTexture(gcv);
+  const haloMat = new THREE.SpriteMaterial({ map: glowTex, color: '#ffb760', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9 });
+  const poolMat = new THREE.MeshBasicMaterial({ map: glowTex, color: '#ff9f45', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.3 });
+  const poolGeo = new THREE.PlaneGeometry(7, 7);
   const post = mat('#3a3340'), glow = mat('#ffd28a', { emissive: '#ffb24d', emissiveIntensity: 1.6 });
   for (const [x, z] of [[-(HX + 1.6), -(HZ + 1)], [HX + 1.6, -(HZ + 1)], [-(HX + 1.6), HZ + 1], [HX + 1.6, HZ + 1]]) {
     const y0 = terrainHeight(x, z);
     mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.2, 6), post, scene, x, y0 + 1.1, z);
     mesh(new THREE.BoxGeometry(0.34, 0.42, 0.34), glow, scene, x, y0 + 2.35, z);
     mesh(new THREE.ConeGeometry(0.3, 0.22, 4), post, scene, x, y0 + 2.67, z).rotation.y = Math.PI / 4;
-    const L = new THREE.PointLight('#ffad55', 14, 10, 1.6);
-    L.position.set(x, y0 + 2.2, z);
-    scene.add(L);
-    lamps.push(L);
+    const halo = new THREE.Sprite(haloMat);
+    halo.position.set(x, y0 + 2.35, z);
+    halo.scale.setScalar(2.6);
+    scene.add(halo);
+    const pool = new THREE.Mesh(poolGeo, poolMat);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(x, y0 + 0.06, z);
+    scene.add(pool);
+    lamps.push(halo);
   }
 
   // 내리는 눈
@@ -196,7 +236,7 @@ export function createWorld(scene) {
         if (a[i * 3 + 1] < 0) a[i * 3 + 1] = 30;
       }
       fg.attributes.position.needsUpdate = true;
-      lamps.forEach((L, i) => { L.intensity = 14 + Math.sin(t * 9 + i * 2) * 0.8 + Math.sin(t * 23 + i) * 0.5; });
+      lamps.forEach((L, i) => L.scale.setScalar(2.6 + Math.sin(t * 9 + i * 2) * 0.12 + Math.sin(t * 23 + i) * 0.06));
     },
   };
 }
