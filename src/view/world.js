@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { ARENA } from './config.js';
 
 export const mat = (color, o = {}) =>
   new THREE.MeshStandardMaterial({ color, roughness: 0.9, flatShading: true, ...o });
@@ -13,7 +12,9 @@ export function mesh(geo, material, parent, x = 0, y = 0, z = 0) {
   return m;
 }
 
-const HX = ARENA.w / 2, HZ = ARENA.d / 2;
+let HX = 15, HZ = 10;
+// 모드마다 경기장 크기가 달라서 무대를 만들기 전에 먼저 정한다
+export function setArena(M) { HX = M.w / 2; HZ = M.d / 2; }
 const rand = (a, b) => a + Math.random() * (b - a);
 
 // 경기장 안은 거의 평평하고, 밖으로 갈수록 눈 언덕이 솟는다.
@@ -81,6 +82,7 @@ function sled(scene, x, z, ry) {
 }
 
 export function createWorld(scene) {
+  const sx = HX / 15, sz = HZ / 10;
   const bg = new THREE.Color('#dcc8d6');
   scene.background = bg;
   scene.fog = new THREE.Fog(bg, 42, 78);
@@ -91,7 +93,7 @@ export function createWorld(scene) {
   sun.position.set(-14, 16, -10);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 22, bottom: -22, near: 1, far: 80 });
+  Object.assign(sun.shadow.camera, { left: -(HX + 11), right: HX + 11, top: HZ + 12, bottom: -(HZ + 12), near: 1, far: 90 });
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.03;
   scene.add(sun);
@@ -138,22 +140,23 @@ export function createWorld(scene) {
   [[-19, -8, 1.3], [-21, 2, 1.1], [-19.5, 9, 1.5], [19, -9, 1.4], [21, 1, 1.2], [19.6, 8.5, 1.1],
    [-10, -15, 1.2], [4, -15.5, 1.5], [12, -14.5, 1.0], [-3, -16, 1.0], [-16, -13.5, 1.4], [17, -13.5, 1.3],
    [-23, -4, 1.3], [23, -4, 1.4], [-22, 12, 1.2], [22, 12, 1.3]]
-    .forEach(([x, z, s]) => tree(scene, x, z, s));
+    .forEach(([x, z, s]) => tree(scene, x * sx, z * sz, s));
 
   // 뒤쪽 나무 울타리
   const wood = mat('#8a6448');
-  for (let x = -12; x <= 12; x += 2) mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.1, 6), wood, scene, x, 0.55 + terrainHeight(x, -12.6), -12.6);
-  for (const y of [0.45, 0.85]) mesh(new THREE.BoxGeometry(24.4, 0.1, 0.06), wood, scene, 0, y + 0.1, -12.6);
+  const fz = -(HZ + 2.6), fx = Math.floor(HX - 3);
+  for (let x = -fx; x <= fx; x += 2) mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.1, 6), wood, scene, x, 0.55 + terrainHeight(x, fz), fz);
+  for (const y of [0.45, 0.85]) mesh(new THREE.BoxGeometry(fx * 2 + 0.4, 0.1, 0.06), wood, scene, 0, y + 0.1 + terrainHeight(0, fz), fz);
 
-  snowman(scene, -17.6, -5.5, 0.9);
-  snowman(scene, 17.8, 4.5, -2.2);
-  sled(scene, 17.2, -6.5, 0.5);
-  sled(scene, -17.4, 6.8, -0.4);
+  snowman(scene, -(HX + 2.6), -5.5 * sz, 0.9);
+  snowman(scene, HX + 2.8, 4.5 * sz, -2.2);
+  sled(scene, HX + 2.2, -6.5 * sz, 0.5);
+  sled(scene, -(HX + 2.4), 6.8 * sz, -0.4);
 
   // 랜턴
   const lamps = [];
   const post = mat('#3a3340'), glow = mat('#ffd28a', { emissive: '#ffb24d', emissiveIntensity: 1.6 });
-  for (const [x, z] of [[-16.6, -11], [16.6, -11], [-16.6, 11], [16.6, 11]]) {
+  for (const [x, z] of [[-(HX + 1.6), -(HZ + 1)], [HX + 1.6, -(HZ + 1)], [-(HX + 1.6), HZ + 1], [HX + 1.6, HZ + 1]]) {
     const y0 = terrainHeight(x, z);
     mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.2, 6), post, scene, x, y0 + 1.1, z);
     mesh(new THREE.BoxGeometry(0.34, 0.42, 0.34), glow, scene, x, y0 + 2.35, z);
@@ -167,7 +170,7 @@ export function createWorld(scene) {
   // 내리는 눈
   const FN = 900, fp = new Float32Array(FN * 3);
   for (let i = 0; i < FN; i++) {
-    fp[i * 3] = rand(-32, 32); fp[i * 3 + 1] = rand(0, 26); fp[i * 3 + 2] = rand(-24, 24);
+    fp[i * 3] = rand(-HX - 17, HX + 17); fp[i * 3 + 1] = rand(0, 30); fp[i * 3 + 2] = rand(-HZ - 14, HZ + 14);
   }
   const fg = new THREE.BufferGeometry();
   fg.setAttribute('position', new THREE.BufferAttribute(fp, 3));
@@ -190,7 +193,7 @@ export function createWorld(scene) {
       for (let i = 0; i < FN; i++) {
         a[i * 3 + 1] -= dt * (1.1 + (i % 5) * 0.25);
         a[i * 3] += Math.sin(t * 0.7 + i) * dt * 0.35;
-        if (a[i * 3 + 1] < 0) a[i * 3 + 1] = 26;
+        if (a[i * 3 + 1] < 0) a[i * 3 + 1] = 30;
       }
       fg.attributes.position.needsUpdate = true;
       lamps.forEach((L, i) => { L.intensity = 14 + Math.sin(t * 9 + i * 2) * 0.8 + Math.sin(t * 23 + i) * 0.5; });

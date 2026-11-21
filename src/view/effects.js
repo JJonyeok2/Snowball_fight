@@ -5,10 +5,14 @@ const tmp = new THREE.Vector3(), look = new THREE.Vector3();
 
 // 파편, 바닥 자국, 발자국, 화면 흔들림, 히트 스톱, 슬로모션, 카메라
 export class Effects {
-  constructor(scene, camera) {
+  // base: 카메라 기본 위치, flip: 파랑팀이면 -1 (경기장을 뒤집어서 내 진영이 아래로 오게)
+  constructor(scene, camera, base, flip = 1) {
     this.camera = camera;
-    this.base = new THREE.Vector3(0, 24, 21);
-    this.target = new THREE.Vector3(0, 0, 0.6);
+    this.flip = flip;
+    this.local = true; // 연습 모드만 히트 스톱과 슬로모션으로 게임 시간을 늦춘다
+    this.base = base.clone();
+    this.target = new THREE.Vector3(0, 0, 0.6 * flip);
+    this.zoomT = 0;
     this.focus = new THREE.Vector3();
     this.zoom = 0;
     this.shake = 0;
@@ -91,10 +95,11 @@ export class Effects {
 
   addShake(a) { this.shake = Math.min(1, this.shake + a); }
   hitStop(t) { this.stop = Math.max(this.stop, t); }
-  slowMo(t, p) { this.slow = t; this.focus.copy(p); }
+  slowMo(t, p) { if (this.local) this.slow = t; this.zoomT = t; this.focus.copy(p); }
 
   // 실제 경과 시간을 게임 시간으로 바꾼다 (히트 스톱 0배, 슬로모션 0.25배)
   scale(realDt) {
+    if (!this.local) return realDt;
     if (this.stop > 0) { this.stop -= realDt; return 0; }
     if (this.slow > 0) { this.slow -= realDt; return realDt * 0.25; }
     return realDt;
@@ -103,7 +108,7 @@ export class Effects {
   clear() {
     for (const q of this.parts) { q.life = 0; q.m.visible = false; }
     for (const k of [...this.marks, ...this.feet]) { k.life = 0; k.m.visible = false; }
-    this.slow = this.stop = this.shake = 0;
+    this.slow = this.stop = this.shake = this.zoomT = 0;
   }
 
   update(dt, realDt) {
@@ -125,9 +130,10 @@ export class Effects {
     }
 
     // 카메라: 슬로모션 중엔 결정타 지점으로 살짝 다가간다
-    this.zoom += ((this.slow > 0 ? 1 : 0) - this.zoom) * (1 - Math.exp(-5 * realDt));
+    this.zoomT = Math.max(0, this.zoomT - realDt);
+    this.zoom += ((this.zoomT > 0 ? 1 : 0) - this.zoom) * (1 - Math.exp(-5 * realDt));
     this.shake = Math.max(0, this.shake - realDt * 2.4);
-    tmp.copy(this.focus).add({ x: 0, y: 12, z: 10.5 });
+    tmp.copy(this.focus).add({ x: 0, y: 12, z: 10.5 * this.flip });
     this.camera.position.copy(this.base).lerp(tmp, this.zoom * 0.45);
     const s = this.shake * this.shake * 0.7;
     this.camera.position.x += (Math.random() - 0.5) * s;

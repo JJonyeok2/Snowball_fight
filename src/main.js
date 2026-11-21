@@ -1,19 +1,38 @@
 import * as THREE from 'three';
 import './style.css';
-import { CFG, RULES, TUNE, saveCfg, resetCfg } from './config.js';
-import { createWorld } from './world.js';
-import { Effects } from './effects.js';
-import { Walls } from './walls.js';
-import { Snowballs, launch, SPAWN_OFFSET } from './snowballs.js';
-import { Fighter } from './fighter.js';
-import { Bot, LEVELS } from './ai.js';
+import { DEFAULTS, RULES, MODES, TEAM_NAMES } from '../shared/rules.js';
+import { LEVELS } from '../shared/ai.js';
+import { Stage } from './view/stage.js';
+import { initAudio, sfx, setMuted, isMuted } from './view/audio.js';
 import { LocalInput } from './input.js';
-import { initAudio, sfx, setMuted, isMuted } from './audio.js';
+import { LocalSession } from './session-local.js';
+import { OnlineSession } from './session-online.js';
+import { Net } from './net.js';
 import { Hud } from './hud.js';
 
 const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* noop */ } },
+};
 
-// ---------- 렌더러 / 씬 ----------
+// ---------- 연습 모드 수치 조절 ----------
+const TUNE = [
+  ['packTime', '눈 하나 뭉치는 시간', 0.3, 2, 0.05, '초'],
+  ['chargeTime', '최대 차지까지 걸리는 시간', 0.3, 2, 0.05, '초'],
+  ['minRange', '최소 사거리', 4, 14, 0.5, 'm'],
+  ['maxRange', '최대 사거리', 10, 30, 0.5, 'm'],
+  ['speed', '이동 속도', 3, 10, 0.25, 'm/s'],
+  ['chargeSlow', '차지 중 이동 속도 배율', 0.2, 1, 0.05, '배'],
+  ['dashCooldown', '대시 쿨타임', 0.5, 5, 0.25, '초'],
+];
+const CFG = { ...DEFAULTS };
+try {
+  const saved = JSON.parse(store.get('snow-cfg', '{}'));
+  for (const k of Object.keys(DEFAULTS)) if (typeof saved[k] === 'number') CFG[k] = saved[k];
+} catch { /* noop */ }
+
+// ---------- 렌더러 ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
@@ -23,145 +42,80 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 document.body.prepend(renderer.domElement);
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 200);
-camera.position.set(0, 24, 21);
-camera.lookAt(0, 0, 0.6);
-
-const world = createWorld(scene);
-const fx = new Effects(scene, camera);
-const walls = new Walls(scene);
-const balls = new Snowballs(scene, fx);
-const me = new Fighter(scene, { color: '#e0483e', accent: '#ffcf5a', side: 1, name: '나' });
-const foe = new Fighter(scene, { color: '#3a6fd8', accent: '#8fe3d2', side: -1, name: '상대', isBot: true });
-const bot = new Bot(foe, me);
-const input = new LocalInput(renderer.domElement, camera);
+const input = new LocalInput(renderer.domElement);
 const hud = new Hud();
+let stage = null, session = null;
+let kind = 'menu'; // menu | practice | online
+let paused = false;
+let watch = {};
+const practice = { mode: store.get('snow-pmode', '1v1'), level: store.get('snow-level', 'normal') };
+const online = { mode: store.get('snow-omode', '2v2') };
+if (!MODES[practice.mode]) practice.mode = '1v1';
+if (!LEVELS[practice.level]) practice.level = 'normal';
+if (!MODES[online.mode]) online.mode = '2v2';
 
-// 조준 곡선 미리보기
-const TN = 36;
-const trajGeo = new THREE.BufferGeometry();
-trajGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TN * 3), 3));
-const traj = new THREE.Line(trajGeo, new THREE.LineDashedMaterial({ color: '#e0483e', dashSize: 0.32, gapSize: 0.2 }));
-const landRing = new THREE.Mesh(
-  new THREE.RingGeometry(0.35, 0.52, 32),
-  new THREE.MeshBasicMaterial({ color: '#e0483e', transparent: true, opacity: 0.8, depthWrite: false }),
-);
-landRing.rotation.x = -Math.PI / 2;
-traj.visible = landRing.visible = false;
-scene.add(traj, landRing);
+function mount(sess, opts) {
+  stage?.dispose();
+  session = sess;
+  stage = new Stage(renderer, { mode: sess.mode, roster: sess.roster, meId: sess.meId, hud, ...opts });
+  input.camera = stage.camera;
+  input.flip = stage.flip;
+  document.body.classList.toggle('team1', stage.myTeam === 1);
+  input.releaseAll();
+  watch = {};
+  paused = false;
+}
 
-function updatePreview() {
-  traj.visible = landRing.visible = me.charging;
-  if (!me.charging) return;
-  const L = launch(me.chargeFrac), a = trajGeo.attributes.position.array;
-  const sx = me.pos.x + me.dir.x * SPAWN_OFFSET, sz = me.pos.z + me.dir.z * SPAWN_OFFSET;
-  for (let i = 0; i < TN; i++) {
-    const t = (L.t * i) / (TN - 1);
-    a[i * 3] = sx + me.dir.x * L.vh * t;
-    a[i * 3 + 1] = Math.max(0.05, RULES.throwHeight + L.vy * t - 0.5 * RULES.gravity * t * t);
-    a[i * 3 + 2] = sz + me.dir.z * L.vh * t;
+function show(id) {
+  for (const o of ['menu', 'lobby', 'result', 'pause']) $(o).hidden = o !== id;
+}
+
+function startDemo() {
+  kind = 'menu';
+  document.body.classList.remove('online', 'playing');
+  mount(new LocalSession({ mode: '2v2', cfg: DEFAULTS, demo: true }), { local: true, quiet: true });
+  hud.hide();
+}
+
+function startPractice() {
+  initAudio();
+  kind = 'practice';
+  document.body.classList.remove('online');
+  document.body.classList.add('playing');
+  mount(new LocalSession({ mode: practice.mode, level: practice.level, cfg: CFG }), { local: true });
+  hud.setup(practice.mode, 0, session.roster, session.meId);
+  show(null);
+}
+
+function startOnline(msg) {
+  initAudio();
+  kind = 'online';
+  document.body.classList.add('online', 'playing');
+  mount(new OnlineSession(net, msg), { local: false });
+  hud.setup(msg.mode, stage.myTeam, msg.roster, msg.you);
+  show(null);
+}
+
+// 카운트다운, 라운드 결과, 경기 결과 배너
+function watchFlow(rs) {
+  const my = stage.myTeam;
+  if (rs.state !== watch.state || rs.round !== watch.round) {
+    watch = { state: rs.state, round: rs.round, cd: -1, shown: false };
+    if (rs.state === 'countdown') hud.banner(`${rs.round}라운드`, 'round', 800);
+    if (rs.state === 'matchEnd') {
+      const win = rs.score[my] > rs.score[1 - my];
+      hud.showResult(win, [rs.score[my], rs.score[1 - my]], kind === 'online');
+    }
   }
-  trajGeo.attributes.position.needsUpdate = true;
-  traj.computeLineDistances();
-  landRing.position.set(sx + me.dir.x * L.range, 0.06, sz + me.dir.z * L.range);
-  hud.setRange(L.range);
-}
-
-// ---------- 게임 흐름 ----------
-const G = { state: 'title', t: 0, time: 0, round: 1, score: { me: 0, foe: 0 }, paused: false, step: -1 };
-
-const ctx = {
-  active: false, walls, effects: fx, time: 0,
-  onThrow: (f, c) => { balls.spawn(f, c); sfx.throw(c); },
-  onDash: f => { sfx.dash(); fx.burst(f.pos.clone().setY(0.2), 8, 2, 0.8); },
-  onEmpty: f => { if (f === me) { hud.toast('눈이 없어요. Space를 꾹 눌러 뭉치세요'); sfx.empty(); } },
-  onPackTick: f => sfx.pack(f === me ? 1 : 0.45),
-  onBallReady: f => { if (f === me) sfx.ready(); },
-};
-
-const hits = {
-  fighter(f, b) {
-    const p = b.m.position.clone();
-    f.takeHit(b.v);
-    fx.burst(p, 26, 5, 1.2, b.v);
-    fx.hitStop(0.07);
-    fx.addShake(f === me ? 0.6 : 0.32);
-    sfx.hit();
-    if (f.hp <= 0 && G.state === 'play') endRound(f === me ? foe : me, f, p);
-  },
-  wall(w, b) {
-    const broke = walls.hit(w, b.v);
-    fx.burst(b.m.position.clone(), 12, 3);
-    if (broke) {
-      fx.burst(new THREE.Vector3(w.x, 0.5, w.z), 30, 4.5, 1.3);
-      fx.addShake(0.2);
-      sfx.wallBreak();
-    } else sfx.wall();
-  },
-  ground(b) {
-    const p = b.m.position;
-    fx.burst(p.clone().setY(0.15), 8, 2, 0.8);
-    fx.mark(p.x, p.z);
-    sfx.ground();
-  },
-};
-
-function startMatch() {
-  G.score.me = G.score.foe = 0;
-  G.round = 1;
-  hud.hideResult();
-  $('start').hidden = true;
-  startRound();
-}
-
-function startRound() {
-  me.reset();
-  foe.reset();
-  walls.reset();
-  balls.clear();
-  fx.clear();
-  bot.reset();
-  G.state = 'countdown';
-  G.t = 0;
-  G.step = -1;
-}
-
-function endRound(winner, loser, p) {
-  G.state = 'roundEnd';
-  G.t = 0;
-  G.step = 0;
-  loser.down = true;
-  winner.win = true;
-  G.score[winner === me ? 'me' : 'foe']++;
-  fx.slowMo(1.1, p);
-}
-
-const COUNT = [[0, () => hud.banner(`${G.round}라운드`, 'round', 800)],
-  [0.9, () => { hud.banner('3', 'num', 550); sfx.tick(); }],
-  [1.5, () => { hud.banner('2', 'num', 550); sfx.tick(); }],
-  [2.1, () => { hud.banner('1', 'num', 550); sfx.tick(); }],
-  [2.7, () => { hud.banner('던져!', 'go', 700); sfx.go(); G.state = 'play'; }]];
-
-function flow() {
-  if (G.state === 'countdown') {
-    while (G.step + 1 < COUNT.length && G.t >= COUNT[G.step + 1][0]) COUNT[++G.step][1]();
-  } else if (G.state === 'roundEnd') {
-    const meWon = me.win;
-    if (G.step === 0 && G.t > 0.9) {
-      G.step = 1;
-      hud.banner(meWon ? '라운드 승리!' : '라운드 패배', meWon ? 'win' : 'lose', 1600);
-      (meWon ? sfx.win : sfx.lose)();
-    }
-    if (G.t > 3.0) {
-      if (G.score.me >= RULES.roundsToWin || G.score.foe >= RULES.roundsToWin) {
-        G.state = 'matchEnd';
-        hud.showResult(G.score.me > G.score.foe, G.score);
-      } else {
-        G.round++;
-        startRound();
-      }
-    }
+  if (rs.state === 'countdown') {
+    const idx = [0.9, 1.5, 2.1].filter(t => rs.stateT >= t).length - 1;
+    if (idx > watch.cd) { watch.cd = idx; hud.banner(String(3 - idx), 'num', 550); sfx.tick(); }
+  }
+  if (rs.state === 'roundEnd' && !watch.shown && rs.stateT > 0.9) {
+    watch.shown = true;
+    const won = rs.winner === my;
+    hud.banner(won ? '라운드 승리!' : '라운드 패배', won ? 'win' : 'lose', 1600);
+    (won ? sfx.win : sfx.lose)();
   }
 }
 
@@ -170,66 +124,208 @@ let last = performance.now();
 function frame(now) {
   const realDt = Math.min((now - last) / 1000, 0.05);
   last = now;
-  if (!G.paused) step(realDt);
-  renderer.render(scene, camera);
+  if (session && !paused) {
+    let dt = realDt;
+    if (session instanceof LocalSession) {
+      session.tick(realDt, kind === 'practice' ? input : null, stage.fx);
+      dt = session.dt;
+      if (kind === 'menu' && session.game.state === 'matchEnd' && session.game.stateT > 3) session.restart();
+    } else {
+      session.tick(realDt, input);
+    }
+    const rs = session.renderState(now / 1000);
+    if (rs) {
+      for (const e of session.takeEvents()) stage.present(e);
+      if (kind !== 'menu') watchFlow(rs);
+      stage.update(rs, dt, realDt);
+      if (kind !== 'menu') hud.update(rs, rs.me, rs.cfg);
+    }
+  }
+  stage?.render();
   requestAnimationFrame(frame);
 }
 
-function step(realDt) {
-  const dt = fx.scale(realDt);
-  G.t += realDt;
-  G.time += dt;
-  ctx.time = G.time;
-  flow();
-  ctx.active = G.state === 'play';
-  input.update();
-  if (ctx.active) bot.update(dt, balls, walls);
-  me.update(dt, input.intent, ctx);
-  foe.update(dt, bot.intent, ctx);
-  balls.update(dt, [me, foe], walls, hits);
-  walls.update(dt);
-  fx.update(dt, realDt);
-  world.update(dt, G.time);
-  updatePreview();
-  hud.update(me, foe, G);
-}
-
-function pause(on) {
-  if (on && !['play', 'countdown'].includes(G.state)) return;
-  G.paused = on;
+function setPause(on) {
+  if (kind !== 'practice') return;
+  const st = session?.game.state;
+  if (on && st !== 'play' && st !== 'countdown') return;
+  paused = on;
   $('pause').hidden = !on;
   input.releaseAll();
   last = performance.now();
 }
-
-addEventListener('blur', () => pause(true));
-addEventListener('keydown', e => { if (e.code === 'Escape') pause(!G.paused); });
-$('pause').addEventListener('click', () => pause(false));
+addEventListener('blur', () => setPause(true));
+addEventListener('keydown', e => { if (e.code === 'Escape') setPause(!paused); });
+$('pause').addEventListener('click', () => setPause(false));
 addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  stage?.resize();
 });
 
-// ---------- 화면 버튼 ----------
-let level = 'normal';
-try { level = localStorage.getItem('snow-level') || 'normal'; } catch { /* noop */ }
-if (!LEVELS[level]) level = 'normal';
-function setLevel(l) {
-  level = l;
-  bot.level = l;
-  document.querySelectorAll('[data-lvl]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lvl === l)));
-  try { localStorage.setItem('snow-level', l); } catch { /* noop */ }
+// ---------- 온라인 ----------
+let net = null;
+let lobbyMsg = null;
+
+function onNet(m) {
+  if (m.t === 'lobby') {
+    lobbyMsg = m;
+    if (kind === 'online') startDemo();
+    renderLobby(m);
+    show('lobby');
+  } else if (m.t === 'start') {
+    startOnline(m);
+  } else if (m.t === 'snap') {
+    if (session instanceof OnlineSession) session.onSnap(m);
+  } else if (m.t === 'error') {
+    if (!$('lobby').hidden) $('lobbyMsg').textContent = m.msg;
+    else menuMsg(m.msg);
+  } else if (m.t === 'left') {
+    toMenu();
+  }
 }
-document.querySelectorAll('.levels').forEach(box => {
-  box.innerHTML = Object.entries(LEVELS).map(([k, v]) => `<button type="button" data-lvl="${k}">${v.label}</button>`).join('');
-});
-document.querySelectorAll('[data-lvl]').forEach(b => b.addEventListener('click', () => setLevel(b.dataset.lvl)));
-setLevel(level);
 
-$('go').addEventListener('click', () => { initAudio(); startMatch(); });
-$('again').addEventListener('click', () => { initAudio(); startMatch(); });
-$('toTitle').addEventListener('click', () => { hud.hideResult(); $('start').hidden = false; G.state = 'title'; });
+function onNetClose() {
+  net = null;
+  const was = kind === 'online' || !$('lobby').hidden;
+  if (was) { toMenu(); menuMsg('서버와 연결이 끊겼어요'); }
+}
+
+async function ensureNet() {
+  if (net && net.open) return net;
+  menuMsg('서버에 연결하는 중이에요. 서버가 자고 있었다면 1분 정도 걸릴 수 있어요');
+  net = new Net(onNet, onNetClose);
+  try {
+    await net.connect();
+    menuMsg('');
+    return net;
+  } catch (e) {
+    net = null;
+    menuMsg(e.message === 'no-server'
+      ? '이 페이지에서는 온라인을 쓸 수 없어요. 배포된 서버 주소에서 열어 주세요'
+      : '서버에 연결할 수 없어요. 잠시 후 다시 해 주세요');
+    throw e;
+  }
+}
+
+function nick() {
+  const n = $('nick').value.trim().slice(0, 10) || '플레이어';
+  store.set('snow-nick', n);
+  return n;
+}
+
+function menuMsg(t) { $('menuMsg').textContent = t; }
+
+function toMenu() {
+  if (kind !== 'menu') startDemo();
+  hud.hideResult();
+  show('menu');
+}
+
+function renderLobby(m) {
+  $('roomCode').textContent = m.code;
+  $('lobbyMode').textContent = MODES[m.mode].label;
+  $('lobbyMsg').textContent = '';
+  const box = $('teams');
+  box.innerHTML = '';
+  m.slots.forEach((team, t) => {
+    const col = document.createElement('div');
+    col.className = `team t${t}`;
+    const h = document.createElement('h3');
+    h.textContent = TEAM_NAMES[t];
+    col.appendChild(h);
+    const meHere = team.some(s => s && s.you);
+    team.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = `seat${s ? '' : ' empty'}${s && s.you ? ' you' : ''}`;
+      const label = document.createElement('span');
+      label.textContent = s ? `${s.name}${s.bot ? ' (AI)' : ''}${s.host ? ', 방장' : ''}${s.you ? ' (나)' : ''}` : '빈자리';
+      row.appendChild(label);
+      if (!s && m.host) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'mini'; b.textContent = 'AI 넣기';
+        b.onclick = () => net?.send({ t: 'bot', team: t });
+        row.appendChild(b);
+      }
+      if (s && s.bot && m.host) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'mini ghost'; b.textContent = '빼기';
+        b.onclick = () => net?.send({ t: 'kick', team: t, slot: i });
+        row.appendChild(b);
+      }
+      col.appendChild(row);
+    });
+    if (!meHere && team.some(s => !s)) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ghost move'; b.textContent = '이 팀으로 옮기기';
+      b.onclick = () => net?.send({ t: 'team', team: t });
+      col.appendChild(b);
+    }
+    box.appendChild(col);
+  });
+  const full = m.slots.flat().every(Boolean);
+  $('startOnline').hidden = !m.host;
+  $('startOnline').disabled = !full;
+  $('lobbyHint').textContent = m.host
+    ? (full ? '모두 모였어요. 시작하세요!' : '친구에게 초대 링크를 보내거나 빈자리에 AI를 넣으세요')
+    : '방장이 시작하기를 기다리는 중이에요';
+}
+
+function roomLink(code) {
+  const u = new URL(location.href);
+  const srv = new URLSearchParams(location.search).get('server');
+  u.search = '';
+  u.hash = '';
+  u.searchParams.set('room', code);
+  if (srv) u.searchParams.set('server', srv);
+  return u.toString();
+}
+
+// ---------- 메뉴 버튼 ----------
+function bindChoice(boxId, items, get, setFn) {
+  const box = $(boxId);
+  box.innerHTML = items.map(([k, label]) => `<button type="button" data-k="${k}">${label}</button>`).join('');
+  const sync = () => box.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === get())));
+  box.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setFn(b.dataset.k); sync(); }));
+  sync();
+}
+const modeItems = Object.entries(MODES).map(([k, v]) => [k, v.label]);
+bindChoice('pMode', modeItems, () => practice.mode, k => { practice.mode = k; store.set('snow-pmode', k); });
+bindChoice('pLevel', Object.entries(LEVELS).map(([k, v]) => [k, v.label]), () => practice.level, k => { practice.level = k; store.set('snow-level', k); });
+bindChoice('oMode', modeItems, () => online.mode, k => { online.mode = k; store.set('snow-omode', k); });
+
+$('nick').value = store.get('snow-nick', '');
+$('goPractice').addEventListener('click', startPractice);
+$('createRoom').addEventListener('click', async () => {
+  initAudio();
+  try { await ensureNet(); } catch { return; }
+  net.send({ t: 'create', mode: online.mode, name: nick() });
+});
+$('joinForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  initAudio();
+  const code = $('joinCode').value.trim().toUpperCase();
+  if (code.length !== 4) { menuMsg('방 코드 4자리를 넣어 주세요'); return; }
+  try { await ensureNet(); } catch { return; }
+  net.send({ t: 'join', code, name: nick() });
+});
+$('leaveRoom').addEventListener('click', () => { net?.send({ t: 'leave' }); toMenu(); });
+$('startOnline').addEventListener('click', () => net?.send({ t: 'start' }));
+$('copyLink').addEventListener('click', async () => {
+  const link = roomLink(lobbyMsg?.code || '');
+  try {
+    await navigator.clipboard.writeText(link);
+    $('copyLink').textContent = '복사했어요';
+  } catch {
+    $('lobbyMsg').textContent = link;
+  }
+  setTimeout(() => { $('copyLink').textContent = '초대 링크 복사'; }, 1500);
+});
+$('again').addEventListener('click', () => { hud.hideResult(); startPractice(); });
+$('toTitle').addEventListener('click', toMenu);
+$('quit').addEventListener('click', () => {
+  if (kind === 'online') net?.send({ t: 'leave' });
+  toMenu();
+});
 
 $('mute').checked = isMuted();
 $('mute').addEventListener('change', e => setMuted(e.target.checked));
@@ -247,11 +343,27 @@ for (const [k] of TUNE) {
     CFG[k] = +e.target.value;
     if (CFG.minRange > CFG.maxRange) CFG[k === 'minRange' ? 'maxRange' : 'minRange'] = CFG[k];
     syncTune();
-    saveCfg();
+    store.set('snow-cfg', JSON.stringify(CFG));
+    if (kind === 'practice') Object.assign(session.game.cfg, CFG);
   });
 }
-$('resetCfg').addEventListener('click', () => { resetCfg(); syncTune(); });
+$('resetCfg').addEventListener('click', () => {
+  Object.assign(CFG, DEFAULTS);
+  syncTune();
+  store.set('snow-cfg', '{}');
+  if (kind === 'practice') Object.assign(session.game.cfg, CFG);
+});
 syncTune();
 
-if (location.search.includes('debug')) window.__snow = { G, me, foe, bot, balls, walls };
+// 초대 링크로 들어온 경우
+const invite = new URLSearchParams(location.search).get('room');
+if (invite) {
+  $('joinCode').value = invite.toUpperCase().slice(0, 4);
+  menuMsg('초대받은 방이에요. 이름을 적고 입장을 누르세요');
+  setTimeout(() => $('nick').focus(), 50);
+}
+
+startDemo();
+show('menu');
+if (location.search.includes('debug')) window.__snow = { get session() { return session; }, get stage() { return stage; }, RULES };
 requestAnimationFrame(frame);

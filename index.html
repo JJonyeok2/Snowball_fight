@@ -3,26 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>눈싸움 1대1</title>
+  <title>눈싸움</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Jua&family=Gothic+A1:wght@500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div id="hud">
-    <div id="title" class="card"><h1>눈싸움</h1><p>연습 모드, 컴퓨터 상대</p></div>
+  <div id="tags"></div>
 
+  <div id="hud" hidden>
     <div id="scoreboard" class="card">
-      <div class="side me"><span class="name">나</span><div class="hp" id="hpMe"></div></div>
+      <div class="side t0" id="side0"><span class="name" id="name0">빨강팀</span><div class="hp" id="hp0"></div><b class="kills" id="k0"></b></div>
       <div class="mid">
-        <div class="pips me" id="rMe"></div>
+        <div class="pips t0" id="r0"></div>
         <span id="roundNo">1라운드</span>
-        <div class="pips foe" id="rFoe"></div>
+        <div class="pips t1" id="r1"></div>
       </div>
-      <div class="side foe"><div class="hp" id="hpFoe"></div><span class="name">상대</span></div>
+      <div class="side t1" id="side1"><b class="kills" id="k1"></b><div class="hp" id="hp1"></div><span class="name" id="name1">파랑팀</span></div>
     </div>
 
+    <div id="feed"></div>
+
     <div id="ammoBox" class="card">
+      <div class="lineup"><b>체력</b><div class="hp mine" id="myHp"></div></div>
       <b>눈덩이</b>
       <div class="slots" id="slots"></div>
       <div class="bar"><span id="packBar"></span></div>
@@ -35,44 +38,78 @@
     </div>
 
     <div id="banner"></div>
+    <div id="respawn"></div>
     <div id="toast"></div>
 
     <details id="tune" class="card">
       <summary>설정</summary>
-      <div class="group">
-        <span class="label">상대 난이도</span>
-        <div class="levels"></div>
-      </div>
       <label class="chk"><input type="checkbox" id="mute"> 소리 끄기</label>
-      <div id="tuneRows"></div>
-      <div class="btns"><button type="button" class="ghost" id="resetCfg">숫자 기본값</button></div>
+      <div class="practiceOnly">
+        <p class="label">숫자 조절 (연습 모드)</p>
+        <div id="tuneRows"></div>
+        <div class="btns"><button type="button" class="ghost" id="resetCfg">숫자 기본값</button></div>
+      </div>
+      <div class="btns"><button type="button" class="ghost" id="quit">메뉴로 나가기</button></div>
     </details>
   </div>
 
-  <div id="start" class="overlay"><div class="card panel">
-    <h2>눈싸움 1대1</h2>
-    <p>멈춰서 눈을 뭉치고, 힘을 모아 던지세요. 세 번 맞히면 라운드를 이기고, 먼저 두 라운드를 이기면 승리예요.</p>
+  <div id="menu" class="overlay"><div class="card panel wide">
+    <h1>눈싸움</h1>
+    <p class="lead">멈춰서 눈을 뭉치고, 힘을 모아 던지세요. 1대1은 세 번 맞히면, 2대2는 먼저 5번 쓰러뜨리면 라운드 승리. 3판 2선승이에요.</p>
+    <div class="cols">
+      <section>
+        <h2>연습 모드</h2>
+        <p class="label">인원</p>
+        <div class="choice" id="pMode"></div>
+        <p class="label">컴퓨터 난이도</p>
+        <div class="choice" id="pLevel"></div>
+        <button type="button" id="goPractice" class="primary full">연습 시작</button>
+      </section>
+      <section>
+        <h2>친구와 온라인</h2>
+        <label class="label" for="nick">내 이름</label>
+        <input id="nick" maxlength="10" placeholder="이름 (10자까지)" autocomplete="nickname">
+        <p class="label">인원</p>
+        <div class="choice" id="oMode"></div>
+        <button type="button" id="createRoom" class="primary full">방 만들기</button>
+        <form id="joinForm" class="join">
+          <input id="joinCode" maxlength="4" placeholder="방 코드" autocomplete="off" aria-label="방 코드">
+          <button type="submit" class="ghost">입장</button>
+        </form>
+      </section>
+    </div>
+    <p id="menuMsg" class="msg" role="status"></p>
     <ul class="keys">
-      <li><span><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></span>이동 (중앙선은 못 넘어요)</li>
+      <li><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>이동</li>
       <li><span>마우스</span>조준</li>
-      <li><span><kbd>Space</kbd> 또는 우클릭 꾹</span>멈춰서 눈 뭉치기, 최대 3개</li>
-      <li><span>좌클릭 누르고 떼기</span>차지 던지기, 오래 누를수록 멀리</li>
-      <li><span><kbd>Shift</kbd></span>대시로 피하기</li>
-      <li><span><kbd>Esc</kbd></span>일시정지</li>
+      <li><span><kbd>Space</kbd> / 우클릭 꾹</span>눈 뭉치기</li>
+      <li><span>좌클릭 누르고 떼기</span>차지 던지기</li>
+      <li><span><kbd>Shift</kbd></span>대시</li>
+      <li><span><kbd>Esc</kbd></span>일시정지 (연습)</li>
     </ul>
-    <div class="group"><span class="label">상대 난이도</span><div class="levels"></div></div>
-    <button type="button" id="go" class="primary">시작하기</button>
+  </div></div>
+
+  <div id="lobby" class="overlay" hidden><div class="card panel wide">
+    <div class="roomHead">
+      <div><p class="label">방 코드</p><p class="code" id="roomCode">----</p></div>
+      <div class="roomInfo"><span class="pill" id="lobbyMode">2대2</span><button type="button" class="ghost" id="copyLink">초대 링크 복사</button></div>
+    </div>
+    <div id="teams" class="teams"></div>
+    <p id="lobbyHint" class="hint"></p>
+    <p id="lobbyMsg" class="msg" role="status"></p>
+    <div class="btns"><button type="button" class="ghost" id="leaveRoom">나가기</button><button type="button" class="primary" id="startOnline">시작하기</button></div>
   </div></div>
 
   <div id="result" class="overlay" hidden><div class="card panel center">
     <h2 id="resultTitle">승리!</h2>
     <p class="score" id="resultScore">2 : 0</p>
-    <div class="btns"><button type="button" class="ghost" id="toTitle">난이도 바꾸기</button><button type="button" class="primary" id="again">재대결</button></div>
+    <div class="btns" id="resultBtns"><button type="button" class="ghost" id="toTitle">메뉴로</button><button type="button" class="primary" id="again">재대결</button></div>
+    <p class="hint" id="resultWait" hidden>잠시 후 방으로 돌아가요</p>
   </div></div>
 
   <div id="pause" class="overlay" hidden><div class="card panel center">
     <h2>일시정지</h2>
-    <p>클릭하면 이어서 해요</p>
+    <p class="hint">클릭하면 이어서 해요</p>
   </div></div>
 
   <script type="module" src="/src/main.js"></script>

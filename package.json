@@ -1,19 +1,25 @@
 {
   "name": "snowball-fight",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node server/index.js",
+    "start": "node server/index.js",
     "build": "vite build",
     "build:single": "vite build --mode single",
     "preview": "vite preview"
   },
   "dependencies": {
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "vite": "^8.3.8",
     "vite-plugin-singlefile": "^2.3.4"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
