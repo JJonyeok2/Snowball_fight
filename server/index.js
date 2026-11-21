@@ -8,6 +8,7 @@ import { Bot } from '../shared/ai.js';
 import { MODES, RULES, DEFAULTS } from '../shared/rules.js';
 
 const PORT = Number(process.env.PORT) || 8080;
+const HOST = process.env.HOST || '0.0.0.0';
 const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 const TICK = 1 / RULES.tickRate;
 const MIME = {
@@ -281,4 +282,4 @@ setInterval(() => {
   }
 }, 20000);
 
-server.listen(PORT, () => console.log(`눈싸움 서버: http://localhost:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`눈싸움 서버: http://localhost:${PORT}`));
