@@ -19,6 +19,7 @@ export const RULES = {
   wallHp: 2,
   gravity: 22,
   throwHeight: 1.3,
+  throwCooldown: 0.5, // 던진 뒤 다음 차지까지 쉬는 시간(초), 광클 방지
   dashSpeed: 15,
   dashTime: 0.18,
   respawnTime: 3,     // 2대2 부활 대기(초)

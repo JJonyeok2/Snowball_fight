@@ -45,7 +45,7 @@ export function newPlayer(id, team, slot, name, isBot = false) {
     id, team, slot, name, isBot, side: team === 0 ? 1 : -1,
     x: 0, z: 0, dx: 0, dz: -1, hp: 0, ammo: 0, pack: 0, packSnd: 0, packing: false,
     charging: false, chargeT: 0, prevCharge: false, dashT: 0, dashCd: 0, ddx: 0, ddz: 0,
-    throwT: 0, hitT: 0, kx: 0, kz: 0, speed: 0, mvx: 0, mvz: 0, down: false, respawnT: 0, invulnT: 0, stones: 0,
+    throwT: 0, hitT: 0, kx: 0, kz: 0, speed: 0, mvx: 0, mvz: 0, down: false, respawnT: 0, invulnT: 0, stones: 0, throwCd: 0, queued: false,
   };
 }
 
@@ -54,14 +54,14 @@ export function resetPlayer(p, mode) {
   Object.assign(p, {
     x: s.x, z: s.z, dx: 0, dz: -p.side, hp: RULES.hp, ammo: RULES.startAmmo, pack: 0, packSnd: 0,
     packing: false, charging: false, chargeT: 0, prevCharge: false, dashT: 0, dashCd: 0,
-    throwT: 0, hitT: 0, kx: 0, kz: 0, speed: 0, down: false, respawnT: 0, invulnT: 0, stones: 0,
+    throwT: 0, hitT: 0, kx: 0, kz: 0, speed: 0, down: false, respawnT: 0, invulnT: 0, stones: 0, throwCd: 0, queued: false,
   });
 }
 
 // 스냅샷과 예측 보정에 쓰는 직렬화 필드
 const P_NUM = ['x', 'z', 'dx', 'dz', 'hp', 'ammo', 'pack', 'packSnd', 'chargeT', 'dashT', 'dashCd', 'ddx', 'ddz',
-  'throwT', 'hitT', 'kx', 'kz', 'speed', 'mvx', 'mvz', 'respawnT', 'invulnT', 'stones'];
-const P_BOOL = ['packing', 'charging', 'prevCharge', 'down'];
+  'throwT', 'hitT', 'kx', 'kz', 'speed', 'mvx', 'mvz', 'respawnT', 'invulnT', 'stones', 'throwCd'];
+const P_BOOL = ['packing', 'charging', 'prevCharge', 'down', 'queued'];
 
 export function packPlayer(p) {
   const a = [p.id];
@@ -92,6 +92,7 @@ export function stepPlayer(p, I, dt, ctx) {
   p.throwT = Math.max(0, p.throwT - dt);
   p.hitT = Math.max(0, p.hitT - dt);
   p.invulnT = Math.max(0, p.invulnT - dt);
+  p.throwCd = Math.max(0, p.throwCd - dt);
 
   if (can && I) {
     const ax = I.ax - p.x, az = I.az - p.z, l = Math.hypot(ax, az);
@@ -117,21 +118,26 @@ export function stepPlayer(p, I, dt, ctx) {
   }
 
   // 차지와 던지기 (누르는 순간 시작, 떼는 순간 던짐)
+  // 던진 직후 쉬는 시간(throwCd) 동안 누른 건 기억해 뒀다가, 쉬는 시간이 끝났을 때 아직 누르고 있으면 그때 시작한다.
+  if (pressed) p.queued = true;
+  if (!chargeIn) p.queued = false;
   if (!can || p.hitT > 0 || p.dashT > 0) p.charging = false;
   else if (p.charging) {
     // 차지 중 취소: 던지지 않고 눈덩이도 그대로. 버튼을 뗐다가 다시 눌러야 새로 차지한다.
-    if (I && I.cancel) { p.charging = false; p.chargeT = 0; ctx.emit('cancel', p); }
+    if (I && I.cancel) { p.charging = false; p.chargeT = 0; p.queued = false; ctx.emit('cancel', p); }
     else if (chargeIn) p.chargeT += dt;
     else {
       const c = chargeFrac(p, cfg);
       p.charging = false;
       p.ammo--;
       p.throwT = 0.25;
+      p.throwCd = RULES.throwCooldown;
       ctx.spawnBall(p, c);
     }
-  } else if (pressed) {
+  } else if (p.queued && p.throwCd <= 0) {
+    p.queued = false;
     // 얼음돌을 들고 있으면 누르는 순간 바로 직선으로 날린다
-    if (p.stones > 0) { p.stones--; p.throwT = 0.25; ctx.spawnStone(p); }
+    if (p.stones > 0) { p.stones--; p.throwT = 0.25; p.throwCd = RULES.throwCooldown; ctx.spawnStone(p); }
     else if (p.ammo > 0) { p.charging = true; p.chargeT = 0; }
     else ctx.emit('empty', p);
   }
